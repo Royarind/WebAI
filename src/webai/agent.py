@@ -70,6 +70,7 @@ class Agent:
             obs={'task':task,'page':opened,'elements':self.browser.inspect(60),'overlays':overlay_inventory(self.browser.page),'recent_runs':self.memory.recent_runs(4),'domain_notes':self.memory.notes_for(domain,4)}
             timings['initial_observation_seconds']=round(time.perf_counter()-phase,3)
             messages=[{'role':'user','content':json.dumps({'goal':task,'observation':obs},ensure_ascii=False)}]
+            failed_action_signatures = {}
             for i in range(self.settings.max_steps):
                 # Capturing full-page screenshots on every step is expensive and
                 # wasted when vision is disabled. Keep screenshots opt-in.
@@ -84,6 +85,7 @@ class Agent:
                 timings['planning_seconds'].append(round(time.perf_counter()-phase,3))
                 trace.append({'step':i+1,'plan':plan})
                 kind=plan['action']
+                signature = json.dumps({key: plan.get(key) for key in ('action','by','value','name','text','option','checked')}, sort_keys=True, ensure_ascii=False)
                 if kind=='finish':
                     status, summary = self._finish_status(plan, page=self.browser.page)
                     break
@@ -100,6 +102,13 @@ class Agent:
                 if kind=='navigate' and not plan.get('value','').startswith(('http://','https://')): raise ValueError('Navigation must use http(s).')
                 phase=time.perf_counter(); result=self._execute_action_with_recovery(plan)
                 timings['action_seconds'].append(round(time.perf_counter()-phase,3))
+                if result.get('ok') is False:
+                    failed_action_signatures[signature] = failed_action_signatures.get(signature, 0) + 1
+                    if failed_action_signatures[signature] >= 2:
+                        result['loop_guard'] = True
+                        result['recovery_hint'] = 'This exact action has failed repeatedly. Stop retrying it. Inspect candidate counts and visible/enabled state, choose a genuinely different evidence-based strategy, or ask the user for help.'
+                else:
+                    failed_action_signatures.pop(signature, None)
                 if kind=='screenshot' and result.get('path'): artifacts.append(result['path'])
                 phase=time.perf_counter()
                 observation={'url':self.browser.page.url,'title':self.browser.page.title(),'result':result,'elements':self.browser.inspect(100),'overlays':overlay_inventory(self.browser.page)}
@@ -111,7 +120,11 @@ class Agent:
                 if len(messages) > 5:
                     messages = [messages[0]] + messages[-4:]
                 if result.get('ok') is False:
-                    messages.append({'role':'user','content':'The action did not verify. Reinspect and recover; do not blindly repeat.'})
+                    if result.get('loop_guard'):
+                        status='needs_input'
+                        summary='Stopped a repeated failing action to prevent an automation loop. The locator needs a different evidence-based strategy.'
+                        break
+                    messages.append({'role':'user','content':json.dumps({'instruction':'The action failed. Do not repeat the same action or merely change locator syntax without new evidence. Use the error details and candidate metadata to select a different strategy, inspect once, or ask the user for help.','action_error':result},ensure_ascii=False)})
             else:
                 status='step_limit'; summary=f'Stopped at configured limit ({self.settings.max_steps} steps).'
             timings['unattributed_seconds']=round(max(0.0,time.perf_counter()-perf_start-timings['browser_start_seconds']-timings['url_discovery_seconds']-timings['navigation_seconds']-timings['initial_observation_seconds']-sum(timings['planning_seconds'])-sum(timings['action_seconds'])-sum(timings['post_action_observation_seconds'])),3)
