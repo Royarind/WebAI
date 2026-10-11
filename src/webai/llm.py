@@ -199,9 +199,8 @@ class LLMClient:
             except OSError:
                 pass
 
-        # A malformed locator should not terminate the entire browser task. Ask
-        # for one corrected action using the exact validation error, then fail
-        # clearly if the second response is still invalid.
+        # Give local models one chance to correct malformed JSON/action fields.
+        # Never execute a locator that fails validation.
         for attempt in range(2):
             response = self._post_chat(
                 {
@@ -215,18 +214,24 @@ class LLMClient:
             content = self._response_content(response, "action planning", self.provider_name)
             try:
                 return self._parse_action(content)
-            except ValueError as exc:
-                if str(exc) != "Model returned an invalid locator." or attempt == 1:
-                    raise
+            except (ValueError, json.JSONDecodeError) as exc:
+                if attempt == 1:
+                    raise ValueError(
+                        f"Model returned an invalid action after one correction attempt: {exc}"
+                    ) from exc
                 msgs.append({"role": "assistant", "content": content})
                 msgs.append({
                     "role": "user",
                     "content": (
-                        "Your previous action was rejected: Model returned an invalid locator. "
-                        "Return exactly one corrected JSON action. For click, fill, select, check, "
-                        "and read_text, by must be one of role, label, placeholder, text, test_id, css, xpath; "
-                        "value must be a non-empty string. For by=role, value is the role and name is the accessible name. "
-                        "Use only a locator grounded in the latest observation. Do not repeat the invalid action unchanged."
+                        f"Your previous JSON action was rejected: {exc}. "
+                        "Return ONE corrected JSON object only, no markdown. "
+                        "Use action as a string: inspect, click, fill, select, check, "
+                        "read_text, screenshot, navigate, finish, or ask_user. "
+                        "For click/fill/select/check/read_text, by MUST be a plain string "
+                        "from role, label, placeholder, text, test_id, css, xpath; "
+                        "value MUST be a non-empty string. For role, value is the role "
+                        "and name is the accessible name. Do not put a dictionary in "
+                        "action, by, or value. Ground the locator in the observation."
                     ),
                 })
         raise ValueError("Model could not provide a valid action after one correction attempt.")
