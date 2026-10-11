@@ -214,3 +214,129 @@ async def click_with_dom_intelligence(
         authorized=authorized,
         validate=validate,
     )
+
+
+def operate_control(page, by, value, operation, target=None, name=None, steps=1, timeout_ms=5000):
+    """Operate common interactive controls through Playwright and verify state.
+
+    Supported operations: set_value (range/slider/input), choose (native select),
+    increment, decrement, and press (keyboard value adjustment). For +/- buttons,
+    value should identify the quantity input; its nearby container is searched first.
+    """
+    operation = str(operation or "").strip().lower()
+    allowed = {"set_value", "choose", "increment", "decrement", "press"}
+    if operation not in allowed:
+        raise ValueError(f"Unsupported control operation {operation!r}; choose from {sorted(allowed)}.")
+    locator, healed = _recover_locator(page, by, value, name, operation)
+    _one(locator, operation)
+    if not locator.is_visible():
+        raise ValueError("Target control is not visible. Scroll it into view and inspect again.")
+    if locator.is_disabled():
+        raise ValueError("Target control is disabled.")
+    meta = locator.evaluate("""el => ({
+      tag: el.tagName.toLowerCase(), type: (el.getAttribute('type') || '').toLowerCase(),
+      role: (el.getAttribute('role') || '').toLowerCase(), value: ('value' in el) ? String(el.value) : '',
+      min: el.getAttribute('min'), max: el.getAttribute('max'), step: el.getAttribute('step'),
+      ariaValueNow: el.getAttribute('aria-valuenow'), ariaValueMin: el.getAttribute('aria-valuemin'),
+      ariaValueMax: el.getAttribute('aria-valuemax'), disabled: !!el.disabled,
+      label: el.getAttribute('aria-label') || el.innerText || ''
+    })""")
+    before_url = page.url
+    if operation == "set_value":
+        if target is None:
+            raise ValueError("set_value requires a target value.")
+        if meta["type"] == "range" or meta["role"] == "slider":
+            locator.scroll_into_view_if_needed()
+            try:
+                locator.fill(str(target), timeout=timeout_ms)
+            except Exception:
+                locator.focus()
+                locator.press("Home" if float(target) <= float(meta.get("value") or 0) else "End")
+                locator.evaluate("(el, v) => { el.value = String(v); el.dispatchEvent(new Event('input', {bubbles:true})); el.dispatchEvent(new Event('change', {bubbles:true})); }", target)
+            actual = locator.get_attribute("aria-valuenow") if meta["role"] == "slider" else locator.input_value()
+            if actual is None:
+                actual = locator.evaluate("el => String(el.value)")
+            if str(actual) != str(target):
+                raise RuntimeError(f"Slider verification failed: expected {target!r}, got {actual!r}.")
+        else:
+            locator.fill(str(target), timeout=timeout_ms)
+            actual = locator.input_value(timeout=timeout_ms)
+            if str(actual) != str(target):
+                raise RuntimeError(f"Control value verification failed: expected {target!r}, got {actual!r}.")
+    elif operation == "choose":
+        if target is None:
+            raise ValueError("choose requires an option value or visible label.")
+        if meta["tag"] == "select":
+            locator.select_option(label=str(target), timeout=timeout_ms)
+            actual = locator.locator("option:checked").inner_text()
+            selected_value = locator.input_value()
+            if str(actual).strip() != str(target) and str(selected_value) != str(target):
+                raise RuntimeError(f"Dropdown verification failed for {target!r}.")
+        else:
+            # Custom dropdowns are opened via the visible control, then selected by exact accessible text.
+            locator.click(timeout=timeout_ms)
+            candidates = page.get_by_role("option", name=str(target), exact=True)
+            if candidates.count() == 0:
+                candidates = page.get_by_text(str(target), exact=True)
+            _one(candidates, "choose dropdown option")
+            candidates.click(timeout=timeout_ms)
+            selected = locator.get_attribute("aria-valuetext") or locator.get_attribute("aria-label") or locator.inner_text()
+            if str(target).casefold() not in str(selected).casefold():
+                # Common custom widgets update a selected/checked option elsewhere.
+                state = page.get_by_role("option", name=str(target), exact=True)
+                if state.count() != 1 or state.get_attribute("aria-selected") != "true":
+                    raise RuntimeError(f"Custom dropdown selection could not be verified for {target!r}.")
+    elif operation in {"increment", "decrement"}:
+        try:
+            steps = max(1, min(20, int(steps)))
+        except (TypeError, ValueError):
+            steps = 1
+        locator.scroll_into_view_if_needed()
+        if meta["tag"] == "input" and meta["type"] == "number":
+            current = float(locator.input_value() or 0)
+            increment = float(meta.get("step") or 1)
+            desired = current + (increment * steps if operation == "increment" else -increment * steps)
+            if meta.get("min") is not None:
+                desired = max(float(meta["min"]), desired)
+            if meta.get("max") is not None:
+                desired = min(float(meta["max"]), desired)
+            locator.fill(str(int(desired) if desired.is_integer() else desired))
+            actual = float(locator.input_value())
+            if actual != desired:
+                raise RuntimeError(f"Quantity verification failed: expected {desired}, got {actual}.")
+        else:
+            # Look only near the target control to avoid clicking unrelated +/- buttons.
+            container = locator.locator("xpath=..")
+            button_words = ("plus", "increase", "increment", "add", "minus", "decrease", "decrement", "remove")
+            candidates = []
+            for scope in (container, container.locator("xpath=..")):
+                buttons = scope.locator("button,[role='button'],input[type='button']")
+                for i in range(min(buttons.count(), 20)):
+                    btn = buttons.nth(i)
+                    label = " ".join(filter(None, [btn.inner_text(), btn.get_attribute("aria-label"), btn.get_attribute("title"), btn.get_attribute("data-testid")])).strip().lower()
+                    positive = any(w in label for w in ("plus", "increase", "increment", "add", "quantity up"))
+                    negative = any(w in label for w in ("minus", "decrease", "decrement", "remove", "quantity down"))
+                    if (operation == "increment" and positive) or (operation == "decrement" and negative):
+                        candidates.append(btn)
+                if candidates:
+                    break
+            if len(candidates) != 1:
+                raise LookupError(f"Could not identify exactly one nearby {operation} button for this control.")
+            for _ in range(steps):
+                candidates[0].click(timeout=timeout_ms)
+            actual = locator.input_value() if meta["tag"] == "input" else locator.get_attribute("aria-valuenow")
+            if actual is None:
+                raise RuntimeError("The +/- action was performed but the resulting quantity is not observable.")
+    else:
+        key = str(target or "ArrowRight")
+        if key not in {"ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"}:
+            raise ValueError("press supports only ArrowLeft, ArrowRight, Home, End, PageUp, and PageDown.")
+        locator.focus()
+        locator.press(key, timeout=timeout_ms)
+        actual = locator.get_attribute("aria-valuenow") or locator.input_value()
+        if actual is None:
+            raise RuntimeError("Keyboard action completed but the resulting control value is not observable.")
+    return {"ok": True, "action": "control", "operation": operation, "target": target,
+            "before": meta.get("value") or meta.get("ariaValueNow"), "verified": True,
+            "locator": {"by": by, "value": value, "name": name}, "healed": healed,
+            "url_before": before_url, "url_after": page.url}
