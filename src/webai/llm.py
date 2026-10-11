@@ -184,7 +184,21 @@ class LLMClient:
     def next_action(self, messages, screenshot_path=None):
         s = self.settings
         self._headers()  # Fail early when a hosted provider key is missing.
-        msgs = [{"role": "system", "content": SYSTEM}] + list(messages)
+        system_prompt = SYSTEM
+        if s.provider == "ollama":
+            # Qwen3 supports /no_think to avoid spending local CPU time on
+            # hidden reasoning for a task that requires a small JSON action.
+            system_prompt += (
+                "\\n/no_think\\n"
+                "ACTION FORMAT EXAMPLES (follow the field types exactly):\\n"
+                '{"action":"fill","by":"placeholder","value":"Search","text":"wireless computer mice","reason":"Search the catalog"}\\n'
+                '{"action":"click","by":"role","value":"button","name":"Search","reason":"Submit search"}\\n'
+                '{"action":"inspect","reason":"Need more evidence"}\\n'
+                "For fill, text is REQUIRED and must be a string; value identifies the target control. "
+                "Never place an object or array in action, by, value, name, or text. "
+                "Return one JSON object only."
+            )
+        msgs = [{"role": "system", "content": system_prompt}] + list(messages)
         if screenshot_path and s.vision_enabled:
             try:
                 with open(screenshot_path, "rb") as f:
