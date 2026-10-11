@@ -7,6 +7,23 @@ class LLMClient:
     def __init__(self): self.settings=get_settings()
 
     @staticmethod
+    def _raise_http_error(response, purpose):
+        """Surface provider throttling/budget errors without blindly retrying."""
+        body = response.text[:1000]
+        retry_after = response.headers.get('Retry-After')
+        if response.status_code == 402 and 'in_flight_budget_exhausted' in body:
+            wait = f" Retry after {retry_after} seconds for in-flight requests to settle." if retry_after else " Wait for in-flight requests to settle before retrying."
+            raise RuntimeError(
+                f"OpenRouter HTTP 402 ({purpose}): in-flight request budget exhausted.{wait} "
+                f"Do not launch duplicate runs. Check https://openrouter.ai/settings/credits if it persists. "
+                f"Provider detail: {body}"
+            )
+        if response.status_code == 429:
+            wait = f" Retry-After: {retry_after} seconds." if retry_after else ""
+            raise RuntimeError(f"OpenRouter HTTP 429 ({purpose}): rate limited.{wait} Provider detail: {body}")
+        raise RuntimeError(f"OpenRouter HTTP {response.status_code} ({purpose}): {body}")
+
+    @staticmethod
     def _response_content(response, purpose):
         """Extract model content or surface provider errors without a KeyError."""
         try:
