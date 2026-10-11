@@ -34,7 +34,27 @@ def locate(page, by, value, name=None):
     if main_count == 0 and len(frame_matches) == 1:
         return frame_matches[0]
     if main_count > 1 or len(frame_matches) > 1 or (main_count == 1 and frame_matches):
-        raise ValueError("Locator is ambiguous across the page and its frames; narrow the locator.")
+        candidates = []
+        try:
+            candidates = main.evaluate_all("""els => els.slice(0, 6).map(el => ({
+                tag: el.tagName.toLowerCase(),
+                type: el.getAttribute('type') || '',
+                role: el.getAttribute('role') || '',
+                placeholder: el.getAttribute('placeholder') || '',
+                title: el.getAttribute('title') || '',
+                aria_label: el.getAttribute('aria-label') || '',
+                text: (el.innerText || el.value || '').trim().slice(0, 100),
+                visible: !!(el.getClientRects().length),
+                disabled: !!el.disabled
+            }))""")
+        except Exception:
+            pass
+        raise ValueError(
+            f"Locator is ambiguous: main page matched {main_count} element(s), "
+            f"and {len(frame_matches)} child frame(s) had a unique match. "
+            f"Candidate details (up to 6): {json.dumps(candidates, ensure_ascii=False)}. "
+            "Choose a unique visible, enabled target; do not retry with equivalent selector syntax."
+        )
     raise LookupError(f"No element matched locator for action (searched main page and {len(page.frames)-1} child frames).")
 
 
