@@ -14,6 +14,7 @@ app = FastAPI(title="WebAI Local", version="0.4.0")
 session_agent = Agent(browser=WebAI(headless=False))
 last_task = ""
 last_url = ""
+last_result = None
 
 PAGE = """<!doctype html>
 <html><head><meta charset="utf-8"><title>WebAI Local</title>
@@ -40,11 +41,12 @@ pre{white-space:pre-wrap;background:#f4f4f4;padding:14px;border-radius:8px;overf
 function showResult(data){
  const out=document.querySelector('#out');
  out.textContent=JSON.stringify(data,null,2);
- const paused=['needs_input','needs_approval'].includes(data.status);
+ const paused=['needs_input','needs_approval','step_limit'].includes(data.status);
  document.querySelector('#intervention').classList.toggle('hidden',!paused);
  if(paused){
+   const iv=data.intervention||{};
    document.querySelector('#interventionText').textContent =
-     'WebAI paused at '+(data.url||'the current page')+'. Switch to the visible WebAI browser, solve the CAPTCHA or complete the requested manual step, and leave that tab open. Then click Resume after intervention.';
+     (iv.title||'WebAI needs you')+': '+(iv.reason||'Complete the required manual step')+' Current page: '+(data.url||'unknown')+'. '+(iv.user_action||'Complete the step in the visible browser, leave it open, then click Resume.');
  }
 }
 async function runTask(){
@@ -83,7 +85,7 @@ def index():
 
 @app.post("/api/run")
 def run_task(req: RunRequest):
-    global last_task, last_url
+    global last_task, last_url, last_result
     url = req.url.strip()
     task = req.task.strip()
     if url and not url.startswith(("http://", "https://")):
@@ -91,18 +93,23 @@ def run_task(req: RunRequest):
     if not task:
         raise HTTPException(400, "Task is required.")
     last_task, last_url = task, url
-    return session_agent.run(task, url=url or None)
+    last_result = session_agent.run(task, url=url or None)
+    return last_result
 
 @app.post("/api/resume")
 def resume_task():
     if not last_task:
         raise HTTPException(409, "There is no paused task to resume. Run a task first.")
+    if not last_result or last_result.get('status') not in {'needs_input', 'needs_approval', 'step_limit'}:
+        raise HTTPException(409, "The latest task is not paused for intervention. Run a task or wait for WebAI to request help.")
     browser = session_agent.browser
     if browser is None or browser.page is None:
         raise HTTPException(409, "The browser session is no longer available. Run the task again.")
     # Intentionally omit the original URL: navigating to it could discard the
     # user's CAPTCHA/login/consent work. Agent observes the current live page.
-    return session_agent.run(last_task, url=None)
+    global last_result
+    last_result = session_agent.run(last_task, url=None)
+    return last_result
 
 @app.get("/api/history")
 def history():
