@@ -88,6 +88,7 @@ def test_next_action_does_not_retry_unsupported_action(monkeypatch):
 
 @pytest.mark.parametrize("raw_by,expected", [
     ("get_by_placeholder", "placeholder"),
+    ("placeholde", "placeholder"),
     ("getByRole('button')", "role"),
     ("locator strategy: css", "css"),
     ({"strategy": "label"}, "label"),
