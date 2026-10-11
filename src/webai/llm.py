@@ -50,7 +50,7 @@ class LLMClient:
         r = requests.post(
             s.base_url + '/chat/completions',
             headers={'Authorization': 'Bearer ' + s.api_key, 'Content-Type': 'application/json'},
-            json={'model': s.model, 'temperature': 0, 'messages': [
+            json={'model': s.model, 'temperature': 0, 'max_tokens': 120, 'messages': [
                 {'role': 'system', 'content': system}, {'role': 'user', 'content': task}
             ]},
             timeout=(5, min(s.timeout, 20)),
@@ -119,7 +119,7 @@ class LLMClient:
             r = requests.post(
                 s.base_url+'/chat/completions',
                 headers={'Authorization':'Bearer '+s.api_key,'Content-Type':'application/json'},
-                json={'model':s.model,'temperature':0.1,'messages':msgs},
+                json={'model':s.model,'temperature':0.1,'max_tokens':600,'messages':msgs},
                 timeout=(5, min(s.timeout, 30)),
             )
             if r.status_code >= 400:
