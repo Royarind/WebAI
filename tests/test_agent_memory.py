@@ -37,3 +37,26 @@ def test_agent_recovers_from_action_timeout_without_blind_retry():
     assert "shopping-anchor" in result["error"]
     assert "re-inspect" in result["recovery_hint"].lower()
     assert len(calls) == 1  # The failed click is not automatically repeated.
+
+
+def test_finish_requires_explicit_verification():
+    from webai.agent import Agent
+
+    status, summary = Agent._finish_status({"action": "finish", "summary": "Added item to bag"})
+    assert status == "completed_unverified"
+    assert "unverified" in summary.lower()
+
+    status, summary = Agent._finish_status({
+        "action": "finish",
+        "summary": "Requested option is visibly selected",
+        "verified": True,
+        "verification_evidence": "Selected option is shown with aria-pressed=true",
+    })
+    assert status == "completed"
+    assert summary == "Requested option is visibly selected"
+
+
+def test_agent_prompt_requires_observable_verification():
+    assert "observable evidence" in SYSTEM
+    assert "verified=true" in SYSTEM
+    assert "verification_evidence" in SYSTEM
