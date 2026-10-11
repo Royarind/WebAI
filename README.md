@@ -98,3 +98,27 @@ WEBAI_PROFILE_PASSWORD=
 Set only the fields you actually want WebAI to use. Keep these values in a local, untracked `.env` file or your operating system's secret manager; never commit them. Passwords are filled directly into the browser process and are **not** added to LLM prompts or WebAI run history. WebAI never overwrites an already-populated field, submits a form just because it autofilled it, or uses saved profile values for CAPTCHA/MFA/one-time-code/card-security fields. Existing signed-in browser sessions, site account details, and browser/password-manager autofill can also supply values when the site exposes them in the active browser session.
 
 If no suitable saved value exists, WebAI asks for human intervention instead of inventing a name, phone number, email, address or password. The current implementation reads local profile values from environment variables; it does not yet integrate with a separate password vault or third-party wallet API.
+
+
+## Interactive controls (Playwright)
+
+The action layer supports verified control operations for common e-commerce widgets:
+
+- **Range sliders:** `control` with `operation="set_value"` and a numeric `target`. It scrolls the control into view, uses Playwright mouse drag, then checks the resulting value.
+- **Native dropdowns:** `operation="choose"` with the option's visible label or value.
+- **Custom dropdowns:** opens the unique target and selects a unique accessible option/text match; it reports an error if the selection cannot be verified.
+- **Quantity controls:** `operation="increment"` or `"decrement"` with an optional bounded `steps` count (1–20). For +/- buttons, target the quantity input so WebAI can identify nearby, labelled buttons. Numeric inputs are adjusted within their min/max bounds.
+
+Example planner action for a price slider:
+
+```json
+{"action":"control","by":"css","value":"input[type=range]","operation":"set_value","target":1000,"name":"Maximum price"}
+```
+
+Example planner action for a quantity button:
+
+```json
+{"action":"control","by":"css","value":"#quantity","operation":"increment","steps":1,"name":"Quantity"}
+```
+
+Control actions require a unique visible target and verify the resulting state. If the page uses a custom canvas slider or an unlabeled +/- button that cannot be identified reliably, WebAI reports the failure rather than claiming success.
