@@ -52,7 +52,7 @@ def test_next_action_reasks_model_when_locator_is_invalid(monkeypatch):
     assert "invalid locator" in requests[1]["messages"][-1]["content"].lower()
 
 
-def test_next_action_stops_after_one_invalid_locator_correction(monkeypatch):
+def test_next_action_pauses_instead_of_repeating_inspect_after_invalid_locator(monkeypatch):
     client = make_client()
     calls = []
 
@@ -62,10 +62,11 @@ def test_next_action_stops_after_one_invalid_locator_correction(monkeypatch):
 
     monkeypatch.setattr("webai.llm.requests.post", fake_post)
 
-    with pytest.raises(ValueError, match="invalid locator"):
-        client.next_action([{"role": "user", "content": "Click Search"}])
+    action = client.next_action([{"role": "user", "content": "Click Search"}])
 
-    assert len(calls) == 2
+    assert action["action"] == "ask_user"
+    assert "invalid locator" in action["reason"].lower()
+    assert len(calls) == 3
 
 
 def test_next_action_does_not_retry_unsupported_action(monkeypatch):
