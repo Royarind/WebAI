@@ -68,6 +68,10 @@ class WebAI:
         self._ensure()
         return actions.check(self.page, by, value, name, checked)
 
+    def control(self, by, value, operation, target=None, name=None, steps=1):
+        self._ensure()
+        return actions.operate_control(self.page, by, value, operation, target, name, steps)
+
     def scroll(self, direction="down", amount=650):
         """Scroll the current page by a bounded number of pixels."""
         self._ensure()
