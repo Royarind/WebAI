@@ -6,10 +6,35 @@ from .llm import LLMClient
 from .memory import Memory
 from .locators import overlay_inventory
 
+import re
+
 BLOCKED=('purchase','buy now','pay now','payment','delete','remove account','send email','send message','submit order','place order','transfer money','publish','confirm booking','finalize order')
+NEGATION = re.compile(r"\\b(?:do not|don't|dont|never|avoid|without|no need to|not to|not)\\b", re.I)
+
 def sensitive(text):
     low=text.lower()
     return any(x in low for x in BLOCKED)
+
+def sensitive_task(text):
+    """Block requested consequential actions, but allow them when explicitly prohibited.
+
+    Split at common clause boundaries so a negation in one clause does not
+    accidentally authorize a separate consequential action in another.
+    """
+    for clause in re.split(r"[.!?;,\\n]+", text, flags=re.M):
+        low = clause.lower()
+        for phrase in BLOCKED:
+            start = 0
+            while True:
+                index = low.find(phrase, start)
+                if index < 0:
+                    break
+                # Treat a blocked phrase as prohibited only when the clause
+                # does not explicitly negate it before the phrase.
+                if not NEGATION.search(low[:index]):
+                    return True
+                start = index + len(phrase)
+    return False
 
 class Agent:
     """Bounded observe-plan-act-verify loop using a configurable chat model."""
@@ -19,7 +44,7 @@ class Agent:
         start=time.time(); perf_start=time.perf_counter(); artifacts=[]; trace=[]; status='failed'; summary=''; owns=False
         timings={'browser_start_seconds':0.0,'url_discovery_seconds':0.0,'navigation_seconds':0.0,'initial_observation_seconds':0.0,'planning_seconds':[],'action_seconds':[],'post_action_observation_seconds':[],'unattributed_seconds':0.0}
         try:
-            if sensitive(task): raise PermissionError('Blocked by default: the task appears to involve a consequential action. Use an explicitly reviewed workflow for this action.')
+            if sensitive_task(task): raise PermissionError('Blocked by default: the task appears to involve a consequential action. Use an explicitly reviewed workflow for this action.')
             owns=self.browser is None
             if owns:
                 phase=time.perf_counter()
