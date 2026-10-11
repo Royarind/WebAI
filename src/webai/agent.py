@@ -5,6 +5,8 @@ from .config import get_settings
 from .llm import LLMClient
 from .memory import Memory
 from .locators import overlay_inventory
+from .interventions import detect_intervention, intervention_for_status
+from .profile import autofill_known_profile
 
 import re
 
@@ -94,7 +96,7 @@ class Agent:
     def __init__(self, browser=None, llm=None, memory=None):
         self.settings=get_settings(); self.browser=browser; self._browser_owned=False; self.llm=llm or LLMClient(); self.memory=memory or Memory(self.settings.memory_path)
     def run(self, task, url=None):
-        start=time.time(); perf_start=time.perf_counter(); artifacts=[]; trace=[]; status='failed'; summary=''; owns=False; pending_action=None
+        start=time.time(); perf_start=time.perf_counter(); artifacts=[]; trace=[]; status='failed'; summary=''; owns=False; pending_action=None; intervention=None
         timings={'browser_start_seconds':0.0,'url_discovery_seconds':0.0,'navigation_seconds':0.0,'initial_observation_seconds':0.0,'planning_seconds':[],'action_seconds':[],'post_action_observation_seconds':[],'unattributed_seconds':0.0}
         try:
             owns=self.browser is None
@@ -120,6 +122,9 @@ class Agent:
                 phase=time.perf_counter(); opened=self.browser.open(url)
                 timings['navigation_seconds']=round(time.perf_counter()-phase,3)
             domain=urlparse(self.browser.page.url).netloc
+            # Use locally configured profile data and existing browser autofill before asking the model.
+            # Secrets are filled in the browser process and are never placed in the LLM prompt or run history.
+            autofill_known_profile(self.browser.page)
             phase=time.perf_counter()
             # The first planner call must fit small local-model context windows.
             # History and domain notes are useful later, but not worth bloating the
@@ -131,9 +136,12 @@ class Agent:
                 'overlays':_compact_overlays(overlay_inventory(self.browser.page), 3),
             }
             timings['initial_observation_seconds']=round(time.perf_counter()-phase,3)
+            intervention=detect_intervention(self.browser.page, task=task, overlays=obs.get('overlays'))
             messages=[{'role':'user','content':json.dumps({'goal':task,'observation':obs},ensure_ascii=False)}]
             failed_action_signatures = {}
-            for i in range(self.settings.max_steps):
+            if intervention:
+                status='needs_input'; summary=intervention.get('reason', 'Human intervention is required.')
+            for i in range(0 if intervention else self.settings.max_steps):
                 # Capturing full-page screenshots on every step is expensive and
                 # wasted when vision is disabled. Keep screenshots opt-in.
                 shot=None
@@ -152,7 +160,9 @@ class Agent:
                     status, summary = self._finish_status(plan, page=self.browser.page)
                     break
                 if kind=='ask_user':
-                    status='needs_input'; summary=plan.get('summary') or 'The agent needs clarification.'; break
+                    status='needs_input'; summary=plan.get('summary') or plan.get('reason') or 'The agent needs clarification.'
+                    intervention=detect_intervention(self.browser.page, task=task, overlays=obs.get('overlays'), reason=summary) or {'type':'user_input_required','title':'WebAI needs your input','reason':summary[:300],'url':self.browser.page.url,'user_action':'Provide the missing information in the browser or clarify the task, then resume.'}
+                    break
                 # Consequential actions are not permanently blocked. Pause before
                 # execution and return the exact proposed action for explicit approval.
                 action_description = ' '.join(str(plan.get(key, '')) for key in ('text', 'value', 'name', 'option'))
@@ -160,6 +170,7 @@ class Agent:
                     status = 'needs_approval'
                     summary = 'Approval required before this consequential action can execute.'
                     pending_action = plan
+                    intervention={'type':'approval_required','title':'Approval required','reason':summary,'url':self.browser.page.url,'user_action':'Review the proposed action and explicitly approve it before execution.'}
                     break
                 if kind=='navigate' and not plan.get('value','').startswith(('http://','https://')): raise ValueError('Navigation must use http(s).')
                 phase=time.perf_counter(); result=self._execute_action_with_recovery(plan)
@@ -172,6 +183,7 @@ class Agent:
                 else:
                     failed_action_signatures.pop(signature, None)
                 if kind=='screenshot' and result.get('path'): artifacts.append(result['path'])
+                autofill_known_profile(self.browser.page)
                 phase=time.perf_counter()
                 compact_result=_compact_result(result)
                 observation={
@@ -192,12 +204,14 @@ class Agent:
                     if result.get('loop_guard'):
                         status='needs_input'
                         summary='Stopped a repeated failing action to prevent an automation loop. The locator needs a different evidence-based strategy.'
+                        intervention=detect_intervention(self.browser.page, task=task, overlays=observation.get('overlays'), reason=summary, repeat_count=2)
                         break
                     messages.append({'role':'user','content':json.dumps({'instruction':'The action failed. Do not repeat the same action or merely change locator syntax without new evidence. Use the error details and candidate metadata to select a different strategy, inspect once, or ask the user for help.','action_error':result},ensure_ascii=False)})
             else:
                 status='step_limit'; summary=f'Stopped at configured limit ({self.settings.max_steps} steps).'
+                intervention=intervention_for_status(status, page=self.browser.page, summary=summary, overlays=obs.get('overlays'))
             timings['unattributed_seconds']=round(max(0.0,time.perf_counter()-perf_start-timings['browser_start_seconds']-timings['url_discovery_seconds']-timings['navigation_seconds']-timings['initial_observation_seconds']-sum(timings['planning_seconds'])-sum(timings['action_seconds'])-sum(timings['post_action_observation_seconds'])),3)
-            report={'status':status,'summary':summary,'steps':trace,'artifacts':artifacts,'elapsed_seconds':round(time.time()-start,2),'url':self.browser.page.url if self.browser and self.browser.page else None,'timings_seconds':timings,'pending_action':pending_action}
+            report={'status':status,'summary':summary,'steps':trace,'artifacts':artifacts,'elapsed_seconds':round(time.time()-start,2),'url':self.browser.page.url if self.browser and self.browser.page else None,'timings_seconds':timings,'pending_action':pending_action,'intervention':intervention}
             if status=='completed': self.memory.add_note(domain,summary,{'task':task,'steps':len(trace)})
             return report
         except Exception as e:
@@ -207,7 +221,7 @@ class Agent:
                     p=self.browser.screenshot(f'{self.settings.artifact_dir}/error_{int(time.time())}.png'); artifacts.append(p)
             except Exception: pass
             timings['unattributed_seconds']=round(max(0.0,time.perf_counter()-perf_start-timings['browser_start_seconds']-timings['url_discovery_seconds']-timings['navigation_seconds']-timings['initial_observation_seconds']-sum(timings['planning_seconds'])-sum(timings['action_seconds'])-sum(timings['post_action_observation_seconds'])),3)
-            return {'status':'failed','summary':summary,'steps':trace,'artifacts':artifacts,'elapsed_seconds':round(time.time()-start,2),'timings_seconds':timings}
+            return {'status':'failed','summary':summary,'steps':trace,'artifacts':artifacts,'elapsed_seconds':round(time.time()-start,2),'timings_seconds':timings,'intervention':({'type':'browser_blocked','title':'Browser or agent error','reason':summary[:300],'user_action':'Check the browser and error details before retrying.'} if self.browser is None or self.browser.page is None else None)}
         finally:
             try: self.memory.add_run(task,status,summary,artifacts)
             except Exception: pass
