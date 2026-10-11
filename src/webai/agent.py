@@ -161,7 +161,7 @@ class Agent:
                     break
                 if kind=='ask_user':
                     status='needs_input'; summary=plan.get('summary') or plan.get('reason') or 'The agent needs clarification.'
-                    intervention=detect_intervention(self.browser.page, task=task, overlays=obs.get('overlays'), reason=summary) or {'type':'user_input_required','title':'WebAI needs your input','reason':summary[:300],'url':self.browser.page.url,'user_action':'Provide the missing information in the browser or clarify the task, then resume.'}
+                    intervention=detect_intervention(self.browser.page, task=task, overlays=overlay_inventory(self.browser.page), reason=summary) or {'type':'user_input_required','title':'WebAI needs your input','reason':summary[:300],'url':self.browser.page.url,'user_action':'Provide the missing information in the browser or clarify the task, then resume.'}
                     break
                 # Consequential actions are not permanently blocked. Pause before
                 # execution and return the exact proposed action for explicit approval.
@@ -194,6 +194,10 @@ class Agent:
                     'overlays':_compact_overlays(overlay_inventory(self.browser.page), 3),
                 }
                 timings['post_action_observation_seconds'].append(round(time.perf_counter()-phase,3))
+                detected=detect_intervention(self.browser.page, task=task, overlays=observation.get('overlays'))
+                if detected:
+                    intervention=detected; status='needs_input'; summary=detected.get('reason','Human intervention is required.')
+                    break
                 messages.append({'role':'assistant','content':json.dumps(plan,ensure_ascii=False)})
                 messages.append({'role':'user','content':json.dumps({'execution_result':compact_result,'updated_observation':observation,'instruction':'Verify progress and select exactly one next action. Do not repeat a successful action unnecessarily.'},ensure_ascii=False)})
                 # Keep the original goal plus only the latest interaction context.
