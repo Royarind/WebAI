@@ -92,7 +92,7 @@ def _compact_result(result):
 class Agent:
     """Bounded observe-plan-act-verify loop using a configurable chat model."""
     def __init__(self, browser=None, llm=None, memory=None):
-        self.settings=get_settings(); self.browser=browser; self.llm=llm or LLMClient(); self.memory=memory or Memory(self.settings.memory_path)
+        self.settings=get_settings(); self.browser=browser; self._browser_owned=False; self.llm=llm or LLMClient(); self.memory=memory or Memory(self.settings.memory_path)
     def run(self, task, url=None):
         start=time.time(); perf_start=time.perf_counter(); artifacts=[]; trace=[]; status='failed'; summary=''; owns=False; pending_action=None
         timings={'browser_start_seconds':0.0,'url_discovery_seconds':0.0,'navigation_seconds':0.0,'initial_observation_seconds':0.0,'planning_seconds':[],'action_seconds':[],'post_action_observation_seconds':[],'unattributed_seconds':0.0}
@@ -102,6 +102,7 @@ class Agent:
                 phase=time.perf_counter()
                 self.browser=WebAI(headless=self.settings.headless)
                 self.browser.start()
+                self._browser_owned=True
                 timings['browser_start_seconds']=round(time.perf_counter()-phase,3)
             if url:
                 phase=time.perf_counter(); opened=self.browser.open(url)
@@ -210,9 +211,11 @@ class Agent:
         finally:
             try: self.memory.add_run(task,status,summary,artifacts)
             except Exception: pass
-            if owns and self.browser:
+            if self._browser_owned and self.browser and status not in {'needs_input', 'needs_approval'}:
                 try: self.browser.close()
-                finally: self.browser=None
+                finally:
+                    self.browser=None
+                    self._browser_owned=False
     @staticmethod
     def _finish_status(plan, page=None):
         """Ground a finish claim against the live page before reporting completion."""
