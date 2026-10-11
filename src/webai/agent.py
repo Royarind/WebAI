@@ -86,7 +86,7 @@ class Agent:
                     messages.append({'role':'user','content':'The action did not verify. Reinspect and recover; do not blindly repeat.'})
             else:
                 status='step_limit'; summary=f'Stopped at configured limit ({self.settings.max_steps} steps).'
-            timings['finalization_seconds']=round(time.perf_counter()-perf_start-sum(timings['browser_start_seconds'] for _ in [0])-timings['url_discovery_seconds']-timings['navigation_seconds']-timings['initial_observation_seconds']-sum(timings['planning_seconds'])-sum(timings['action_seconds'])-sum(timings['post_action_observation_seconds']),3)
+            timings['unattributed_seconds']=round(max(0.0,time.perf_counter()-perf_start-timings['browser_start_seconds']-timings['url_discovery_seconds']-timings['navigation_seconds']-timings['initial_observation_seconds']-sum(timings['planning_seconds'])-sum(timings['action_seconds'])-sum(timings['post_action_observation_seconds'])),3)
             report={'status':status,'summary':summary,'steps':trace,'artifacts':artifacts,'elapsed_seconds':round(time.time()-start,2),'url':self.browser.page.url if self.browser and self.browser.page else None,'timings_seconds':timings}
             if status=='completed': self.memory.add_note(domain,summary,{'task':task,'steps':len(trace)})
             return report
