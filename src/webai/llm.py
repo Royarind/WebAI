@@ -187,8 +187,20 @@ class LLMClient:
                 # Recover common model truncations only when the supplied token is
                 # an unambiguous prefix of exactly one supported locator strategy.
                 if by not in {"role", "label", "placeholder", "text", "test_id", "css", "xpath"}:
-                    matches = [strategy for strategy in ("role", "label", "placeholder", "text", "test_id", "css", "xpath")
-                               if strategy.startswith(by) and len(by) >= 4]
+                    strategies = ("role", "label", "placeholder", "text", "test_id", "css", "xpath")
+                    matches = [strategy for strategy in strategies
+                               if len(by) >= 4 and strategy.startswith(by)]
+                    # Some models drop the first character ("ole" for "role")
+                    # or the last character ("placeholde"). Only accept a unique match.
+                    if not matches and len(by) >= 3:
+                        matches = [strategy for strategy in strategies
+                                   if strategy.startswith(by) or strategy.endswith(by)]
+                    if not matches and len(by) >= 3:
+                        matches = [
+                            strategy for strategy in strategies
+                            if len(strategy) == len(by) + 1
+                            and any(strategy[:i] + strategy[i + 1:] == by for i in range(len(strategy)))
+                        ]
                     if len(matches) == 1:
                         by = matches[0]
                 by = {"testid": "test_id", "data_test_id": "test_id", "accessible_name": "role", "css_selector": "css", "xpath_selector": "xpath"}.get(by, by)
@@ -256,25 +268,33 @@ class LLMClient:
             observation = initial.get("observation", {})
             page = observation.get("page", {})
             url = str(page.get("url", "")).lower()
-            if not any(site in url for site in ("amazon.",)):
-                return None
             match = re.search(r"\bsearch\s+(?:for\s+)?(.+?)(?:\.|$)", goal, re.I)
             if not match:
                 return None
             query = match.group(1).strip().rstrip(".")
+            query = re.split(r"\bif filters?\b|\bfilter\b|\bcompare\b", query, maxsplit=1, flags=re.I)[0].strip()
             elements = observation.get("elements", [])
             candidates = []
             for item in elements:
                 if not isinstance(item, dict) or item.get("tag") != "input" or item.get("disabled"):
                     continue
                 description = " ".join(str(item.get(key, "")) for key in ("name", "placeholder", "id", "type")).lower()
-                if "search" in description and item.get("placeholder"):
+                if ("search" in description or item.get("type") in {"search", "text"}) and (
+                    item.get("placeholder") or item.get("name") or item.get("id")
+                ):
                     candidates.append(item)
             if len(candidates) == 1:
+                field = candidates[0]
+                if field.get("placeholder"):
+                    locator_by, locator_value = "placeholder", str(field["placeholder"])
+                elif field.get("name"):
+                    locator_by, locator_value = "label", str(field["name"])
+                else:
+                    locator_by, locator_value = "css", "#" + str(field["id"])
                 return {
-                    "action": "fill", "by": "placeholder",
-                    "value": str(candidates[0]["placeholder"]), "text": query,
-                    "reason": "Used the uniquely observed Amazon search input after planner locator validation failed.",
+                    "action": "fill", "by": locator_by,
+                    "value": locator_value, "text": query,
+                    "reason": "Used the uniquely observed search input after planner locator validation failed.",
                     "summary": "Entering the requested search query using the observed search field.",
                 }
         except (ValueError, TypeError, StopIteration, json.JSONDecodeError):
