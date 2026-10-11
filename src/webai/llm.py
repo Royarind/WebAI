@@ -160,11 +160,21 @@ class LLMClient:
             raise ValueError("Model returned an invalid action field; expected a string.")
         if action not in allowed:
             raise ValueError("Model returned an unsupported action.")
-        if obj.get("action") in {"click", "fill", "select", "check", "read_text"}:
+        if action in {"click", "fill", "select", "check", "read_text"}:
             valid_by = {"role", "label", "placeholder", "text", "test_id", "css", "xpath"}
-            if obj.get("by") not in valid_by or not isinstance(obj.get("value"), str) or not obj["value"].strip():
-                raise ValueError("Model returned an invalid locator.")
-            obj["value"] = obj["value"].strip()
+            by = obj.get("by")
+            if not isinstance(by, str) or by not in valid_by:
+                raise ValueError("Model returned an invalid locator strategy; expected a supported string.")
+            value = obj.get("value")
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError("Model returned an invalid locator value; expected a non-empty string.")
+            obj["value"] = value.strip()
+            if action == "fill" and not isinstance(obj.get("text"), str):
+                raise ValueError("Model omitted fill text or returned a non-string value.")
+            if action == "select" and not isinstance(obj.get("option"), (str, int, float, bool, type(None))):
+                raise ValueError("Model returned an invalid select option.")
+            if action == "check" and "checked" in obj and not isinstance(obj["checked"], bool):
+                raise ValueError("Model returned an invalid checked value; expected a boolean.")
         if obj.get("action") == "fill" and not isinstance(obj.get("text"), str):
             raise ValueError("Model omitted fill text.")
         if obj.get("action") == "navigate" and not str(obj.get("value", "")).startswith(("http://", "https://")):
