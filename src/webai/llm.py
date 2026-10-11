@@ -202,15 +202,17 @@ class LLMClient:
         # Give local models one chance to correct malformed JSON/action fields.
         # Never execute a locator that fails validation.
         for attempt in range(2):
-            response = self._post_chat(
-                {
-                    "model": s.model,
-                    "temperature": 0.1,
-                    "max_tokens": 600,
-                    "messages": msgs,
-                },
-                "action planning",
-            )
+            request_payload = {
+                "model": s.model,
+                "temperature": 0.1,
+                "max_tokens": 600,
+                "messages": msgs,
+            }
+            # Ollama supports OpenAI-compatible JSON mode. Keep this provider-
+            # specific so cloud-provider request behavior remains unchanged.
+            if s.provider == "ollama":
+                request_payload["response_format"] = {"type": "json_object"}
+            response = self._post_chat(request_payload, "action planning")
             content = self._response_content(response, "action planning", self.provider_name)
             try:
                 return self._parse_action(content)
