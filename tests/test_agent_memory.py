@@ -46,14 +46,35 @@ def test_finish_requires_explicit_verification():
     assert status == "completed_unverified"
     assert "unverified" in summary.lower()
 
+    class FakePage:
+        def evaluate(self, script):
+            return "Citrine Forest Green Size M Bag (1)"
+
     status, summary = Agent._finish_status({
         "action": "finish",
-        "summary": "Requested option is visibly selected",
+        "summary": "Selected Citrine Forest Green, size M",
         "verified": True,
-        "verification_evidence": "Selected option is shown with aria-pressed=true",
-    })
+        "verification_evidence": "Citrine Forest Green Size M",
+    }, page=FakePage())
     assert status == "completed"
-    assert summary == "Requested option is visibly selected"
+    assert summary == "Selected Citrine Forest Green, size M"
+
+
+def test_finish_is_unverified_when_evidence_is_not_on_live_page():
+    from webai.agent import Agent
+
+    class FakePage:
+        def evaluate(self, script):
+            return "Product page. Color options: Black and White. Size S."
+
+    status, summary = Agent._finish_status({
+        "action": "finish",
+        "summary": "Selected Citrine Forest Green, size M",
+        "verified": True,
+        "verification_evidence": "Citrine Forest Green Size M",
+    }, page=FakePage())
+    assert status == "completed_unverified"
+    assert "inconclusive" in summary.lower()
 
 
 def test_agent_prompt_requires_observable_verification():
