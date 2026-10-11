@@ -106,3 +106,32 @@ def test_next_action_normalizes_playwright_style_locator_strategies(monkeypatch,
 
     action = client.next_action([{"role": "user", "content": "Click Search"}])
     assert action["by"] == expected
+
+
+
+def test_invalid_locator_uses_uniquely_observed_amazon_search_field(monkeypatch):
+    client = make_client()
+    calls = []
+
+    def fake_post(url, **kwargs):
+        calls.append(kwargs["json"])
+        return FakeResponse('{"action":"click","by":"unknown","value":""}')
+
+    monkeypatch.setattr("webai.llm.requests.post", fake_post)
+    initial = {
+        "goal": "Search for wireless computer mice. If filters are available, filter for products priced below ₹1,000.",
+        "observation": {
+            "page": {"url": "https://www.amazon.in/", "title": "Amazon"},
+            "elements": [
+                {"tag": "input", "type": "text", "name": "Search Amazon.in", "placeholder": "Search Amazon.in", "disabled": False}
+            ],
+        },
+    }
+
+    action = client.next_action([{"role": "user", "content": json.dumps(initial)}])
+
+    assert action["action"] == "fill"
+    assert action["by"] == "placeholder"
+    assert action["value"] == "Search Amazon.in"
+    assert action["text"] == "wireless computer mice"
+    assert len(calls) == 3
