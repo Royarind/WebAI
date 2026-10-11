@@ -153,6 +153,9 @@ class LLMClient:
             raise ValueError("Model response must be a JSON object.")
         allowed = {"inspect", "click", "fill", "select", "check", "read_text", "screenshot", "navigate", "finish", "ask_user"}
         action = obj.get("action")
+        if isinstance(action, str):
+            action = action.strip().lower()
+            obj["action"] = action
         # Validate the type before set membership: malformed model JSON may
         # provide an object/list here, which otherwise raises an opaque
         # "unhashable type" TypeError.
@@ -163,8 +166,12 @@ class LLMClient:
         if action in {"click", "fill", "select", "check", "read_text"}:
             valid_by = {"role", "label", "placeholder", "text", "test_id", "css", "xpath"}
             by = obj.get("by")
+            if isinstance(by, str):
+                by = by.strip().lower().replace("-", "_").replace(" ", "_")
+                by = {"testid": "test_id", "data_test_id": "test_id", "accessible_name": "role", "css_selector": "css", "xpath_selector": "xpath"}.get(by, by)
+                obj["by"] = by
             if not isinstance(by, str) or by not in valid_by:
-                raise ValueError("Model returned an invalid locator strategy; expected a supported string.")
+                raise ValueError("Model returned an invalid locator strategy; expected one of role, label, placeholder, text, test_id, css, xpath.")
             value = obj.get("value")
             if not isinstance(value, str) or not value.strip():
                 raise ValueError("Model returned an invalid locator value; expected a non-empty string.")
@@ -247,7 +254,7 @@ class LLMClient:
                         "from role, label, placeholder, text, test_id, css, xpath; "
                         "value MUST be a non-empty string. For role, value is the role "
                         "and name is the accessible name. Do not put a dictionary in "
-                        "action, by, or value. Ground the locator in the observation."
+                        "action, by, or value. Normalize by to exactly one lowercase value: role, label, placeholder, text, test_id, css, xpath. For Amazon search, use the exact visible search field label or placeholder, then click the unique Search button or use a supported action to submit. Ground the locator in the observation."
                     ),
                 })
         raise ValueError("Model could not provide a valid action after one correction attempt.")
