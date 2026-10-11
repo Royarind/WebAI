@@ -360,6 +360,7 @@ class Agent:
         if kind=='status': return self.browser.status()
         if kind=='screenshot': return {'ok':True,'path':self.browser.screenshot(plan.get('path') or f'{self.settings.artifact_dir}/manual.png')}
         if kind=='navigate': return self.browser.open(plan['value'])
+        if kind=='scroll': return self.browser.scroll(plan.get('value','down'), plan.get('text',650))
         if kind=='read_text': return {'ok':True,'text':self.browser.text(plan['by'],plan['value'],plan.get('name'))}
         if kind=='click': return self.browser.click(plan['by'],plan['value'],plan.get('name'))
         if kind=='fill': return self.browser.fill(plan['by'],plan['value'],plan['text'],plan.get('name'))
