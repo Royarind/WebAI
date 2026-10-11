@@ -45,3 +45,12 @@ def test_compact_result_bounds_extracted_text_and_elements():
     assert len(compact["text"]) < 1900
     assert len(compact["elements"]) == 24
     assert len(result["text"]) == 3000
+
+
+def test_compact_elements_preserves_current_form_values_and_checked_state():
+    compact = _compact_elements([
+        {"index": 0, "tag": "input", "name": "Customer name:", "value": "Alex Morgan", "checked": False},
+    ])
+
+    assert compact[0]["value"] == "Alex Morgan"
+    assert compact[0]["checked"] is False
