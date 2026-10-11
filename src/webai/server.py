@@ -98,6 +98,7 @@ def run_task(req: RunRequest):
 
 @app.post("/api/resume")
 def resume_task():
+    global last_result
     if not last_task:
         raise HTTPException(409, "There is no paused task to resume. Run a task first.")
     if not last_result or last_result.get('status') not in {'needs_input', 'needs_approval', 'step_limit'}:
@@ -107,7 +108,6 @@ def resume_task():
         raise HTTPException(409, "The browser session is no longer available. Run the task again.")
     # Intentionally omit the original URL: navigating to it could discard the
     # user's CAPTCHA/login/consent work. Agent observes the current live page.
-    global last_result
     last_result = session_agent.run(last_task, url=None)
     return last_result
 
