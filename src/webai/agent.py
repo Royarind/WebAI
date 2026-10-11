@@ -153,7 +153,15 @@ class Agent:
                         artifacts.append(shot)
                     except Exception:
                         pass
-                phase=time.perf_counter(); plan=self.llm.next_action(messages,shot)
+                phase=time.perf_counter()
+                try:
+                    plan=self.llm.next_action(messages,shot)
+                except (ValueError, json.JSONDecodeError) as planning_error:
+                    timings['planning_seconds'].append(round(time.perf_counter()-phase,3))
+                    summary=f'WebAI could not produce a valid next action after correction attempts: {planning_error}'
+                    status='needs_input'
+                    intervention={'type':'agent_stuck','title':'Agent needs help choosing its next action','reason':summary[:300],'url':self.browser.page.url,'user_action':'The browser is still open. You can complete the visible step manually, then click Resume, or simplify the task.'}
+                    break
                 timings['planning_seconds'].append(round(time.perf_counter()-phase,3))
                 trace.append({'step':i+1,'plan':plan})
                 kind=plan['action']
