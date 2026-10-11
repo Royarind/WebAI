@@ -23,9 +23,17 @@ class Agent:
             if owns:
                 self.browser=WebAI(headless=self.settings.headless)
                 self.browser.start()
-            if url: opened=self.browser.open(url)
-            elif self.browser.page: opened=self.browser.status()
-            else: raise ValueError('Provide a URL or an existing browser session.')
+            if url:
+                opened=self.browser.open(url)
+            elif not owns and self.browser.page:
+                opened=self.browser.status()
+            else:
+                # Resolve the starting site only when no URL or open page exists.
+                url=self.llm.resolve_start_url(task)
+                parsed=urlparse(url)
+                if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
+                    raise ValueError('Automatic website discovery did not return a valid http(s) URL. Provide a URL or clarify the intended website.')
+                opened=self.browser.open(url)
             domain=urlparse(self.browser.page.url).netloc
             obs={'task':task,'page':opened,'elements':self.browser.inspect(60),'overlays':overlay_inventory(self.browser.page),'recent_runs':self.memory.recent_runs(4),'domain_notes':self.memory.notes_for(domain,4)}
             messages=[{'role':'user','content':json.dumps({'goal':task,'observation':obs},ensure_ascii=False)}]
