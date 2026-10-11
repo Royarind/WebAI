@@ -105,7 +105,7 @@ class WebAI:
                             fallback_text += "... [text truncated]"
                         return (
                             f"[Requested locator matched zero elements; using visible content "
-                            f"from fallback {fallback_selector!r}.]\\n\\n{fallback_text}"
+                            f"from fallback {fallback_selector!r}.]\n\n{fallback_text}"
                         )
             raise LookupError(
                 f"No elements matched read_text locator (by={by!r}, value={value!r}) "
@@ -132,9 +132,9 @@ class WebAI:
                 "Inspect the current page and try a visible text container."
             )
 
-        result = "\\n\\n".join(chunks)
+        result = "\n\n".join(chunks)
         if count > limit:
-            result += f"\\n\\n[Showing {limit} of {count} matching elements.]"
+            result += f"\n\n[Showing {limit} of {count} matching elements.]"
         if len(result) > max_chars:
             result = result[:max_chars] + "... [text truncated]"
         return result
