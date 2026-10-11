@@ -78,6 +78,20 @@ class Agent:
 
         summary = plan.get('summary') or 'Task finished.'
         evidence = str(plan.get('verification_evidence') or '').strip()
+        verifier = str(plan.get('verification_type') or '').strip()
+        target = str(plan.get('verification_target') or '').strip()
+        if verifier and target:
+            if page is None:
+                return (
+                    'completed_unverified',
+                    f'{summary} Task-specific verification was requested, but no live page was available.'
+                )
+            from .task_verifiers import verify_task_outcome
+            result = verify_task_outcome(page, verifier, target)
+            if result.get('verified'):
+                return 'completed', summary
+            reason = result.get('reason') or 'The task-specific verifier did not find the requested state.'
+            return ('completed_unverified', f'{summary} Task-specific verification was inconclusive: {reason}')
         if plan.get('verified') is not True or not evidence:
             return (
                 'completed_unverified',
