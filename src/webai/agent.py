@@ -185,7 +185,7 @@ class Agent:
                 else:
                     failed_action_signatures.pop(signature, None)
                 if kind=='screenshot' and result.get('path'): artifacts.append(result['path'])
-                autofill_known_profile(self.browser.page)
+                post_profile_filled=autofill_known_profile(self.browser.page)
                 phase=time.perf_counter()
                 compact_result=_compact_result(result)
                 observation={
@@ -198,8 +198,7 @@ class Agent:
                 timings['post_action_observation_seconds'].append(round(time.perf_counter()-phase,3))
                 detected=detect_intervention(self.browser.page, task=task, overlays=observation.get('overlays'))
                 if detected and detected.get('type') == 'contact_input_required':
-                    newly_filled=autofill_known_profile(self.browser.page)
-                    if {'phone','email'}.intersection(newly_filled): detected=None
+                    if {'phone','email'}.intersection(post_profile_filled): detected=None
                 if detected:
                     intervention=detected; status='needs_input'; summary=detected.get('reason','Human intervention is required.')
                     break
