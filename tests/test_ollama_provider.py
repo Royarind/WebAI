@@ -58,6 +58,7 @@ def test_ollama_action_request_needs_no_api_key_or_authorization(monkeypatch):
     monkeypatch.setenv("WEBAI_LLM_PROVIDER", "ollama")
     monkeypatch.setenv("WEBAI_OLLAMA_BASE_URL", "http://localhost:11434/v1")
     monkeypatch.setenv("WEBAI_OLLAMA_MODEL", "qwen3:4b")
+    monkeypatch.setenv("WEBAI_LLM_TIMEOUT", "90")
     monkeypatch.delenv("WEBAI_LLM_API_KEY", raising=False)
     captured = {}
 
@@ -78,6 +79,7 @@ def test_ollama_action_request_needs_no_api_key_or_authorization(monkeypatch):
     assert action["action"] == "inspect"
     assert captured["url"] == "http://localhost:11434/v1/chat/completions"
     assert captured["json"]["model"] == "qwen3:4b"
+    assert captured["timeout"] == (5, 90)
     assert "Authorization" not in captured["headers"]
 
 
