@@ -37,7 +37,7 @@ class Agent:
                 trace.append({'step':i+1,'plan':plan})
                 kind=plan['action']
                 if kind=='finish':
-                    status, summary = self._finish_status(plan)
+                    status, summary = self._finish_status(plan, page=self.browser.page)
                     break
                 if kind=='ask_user':
                     status='needs_input'; summary=plan.get('summary') or 'The agent needs clarification.'; break
@@ -72,15 +72,29 @@ class Agent:
                 try: self.browser.close()
                 finally: self.browser=None
     @staticmethod
-    def _finish_status(plan):
-        """Only report verified completion when the planner provides explicit evidence."""
+    def _finish_status(plan, page=None):
+        """Ground a finish claim against the live page before reporting completion."""
+        from .verification import verify_finish_evidence
+
         summary = plan.get('summary') or 'Task finished.'
         evidence = str(plan.get('verification_evidence') or '').strip()
-        if plan.get('verified') is True and evidence:
+        if plan.get('verified') is not True or not evidence:
+            return (
+                'completed_unverified',
+                f'{summary} The agent did not provide explicit verification evidence, so completion remains unverified.'
+            )
+        if page is None:
+            return (
+                'completed_unverified',
+                f'{summary} Completion was not verified because no live page was available.'
+            )
+        result = verify_finish_evidence(page, evidence)
+        if result.get('verified'):
             return 'completed', summary
+        reason = result.get('reason', 'Evidence did not match the live page state.')
         return (
             'completed_unverified',
-            f'{summary} The agent did not provide explicit verification evidence, so completion remains unverified.'
+            f'{summary} Live-page verification was inconclusive: {reason}'
         )
 
     def _execute_action_with_recovery(self, plan):
