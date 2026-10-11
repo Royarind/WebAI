@@ -1,5 +1,6 @@
 import base64
 import json
+import re
 import requests
 from .config import get_settings
 
