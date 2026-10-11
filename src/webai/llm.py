@@ -5,6 +5,37 @@ SYSTEM = '''You are the planning brain of a browser automation agent. The user g
 
 class LLMClient:
     def __init__(self): self.settings=get_settings()
+
+    @staticmethod
+    def _response_content(response, purpose):
+        """Extract model content or surface provider errors without a KeyError."""
+        try:
+            payload = response.json()
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise RuntimeError(
+                f"OpenRouter {purpose} returned non-JSON HTTP {response.status_code}: "
+                f"{response.text[:800]}"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise RuntimeError(f"OpenRouter {purpose} returned an unexpected response: {str(payload)[:800]}")
+        choices = payload.get('choices')
+        if not isinstance(choices, list) or not choices:
+            detail = payload.get('error') or payload.get('message') or payload
+            raise RuntimeError(
+                f"OpenRouter {purpose} returned no model choices (HTTP {response.status_code}): "
+                f"{str(detail)[:1000]}"
+            )
+        message = choices[0].get('message') if isinstance(choices[0], dict) else None
+        content = message.get('content') if isinstance(message, dict) else None
+        if isinstance(content, list):
+            content = ''.join(part.get('text', '') for part in content if isinstance(part, dict))
+        if not isinstance(content, str) or not content.strip():
+            finish = choices[0].get('finish_reason') if isinstance(choices[0], dict) else None
+            raise RuntimeError(
+                f"OpenRouter {purpose} returned empty model content "
+                f"(finish_reason={finish!r}). Try a different configured model."
+            )
+        return content.strip()
     def resolve_start_url(self, task):
         """Infer a likely official starting URL from a natural-language task."""
         s = self.settings
@@ -26,10 +57,7 @@ class LLMClient:
         )
         if r.status_code >= 400:
             raise RuntimeError(f'OpenRouter URL-discovery HTTP {r.status_code}: {r.text[:500]}')
-        content = r.json()['choices'][0]['message']['content']
-        if isinstance(content, list):
-            content = ''.join(p.get('text', '') for p in content if isinstance(p, dict))
-        content = content.strip()
+        content = self._response_content(r, 'URL discovery')
         if content.startswith('```'):
             content = content.split('\n', 1)[1].rsplit('```', 1)[0].strip()
         obj = json.loads(content)
@@ -96,9 +124,7 @@ class LLMClient:
             )
             if r.status_code >= 400:
                 raise RuntimeError(f'OpenRouter HTTP {r.status_code}: {r.text[:1000]}')
-            content = r.json()['choices'][0]['message']['content']
-            if isinstance(content,list):
-                content = ''.join(p.get('text','') for p in content if isinstance(p,dict))
+            content = self._response_content(r, 'action planning')
             try:
                 return self._parse_action(content)
             except ValueError as exc:
