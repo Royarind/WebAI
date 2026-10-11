@@ -45,5 +45,5 @@ def test_resume_uses_current_page_without_reopening_original_url(monkeypatch):
 
 def test_dashboard_exposes_resume_control():
     assert 'id="resume"' in server.PAGE
-    assert 'fetch('/api/resume'' in server.PAGE
+    assert "fetch('/api/resume')" in server.PAGE
     assert "visible WebAI browser" in server.PAGE
