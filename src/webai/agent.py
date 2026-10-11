@@ -45,19 +45,7 @@ class Agent:
                 if kind in {'click','select','check'} and sensitive(str(plan.get('value',''))+' '+str(plan.get('name',''))):
                     raise PermissionError('Blocked a control whose locator appears to describe a consequential action.')
                 if kind=='navigate' and not plan.get('value','').startswith(('http://','https://')): raise ValueError('Navigation must use http(s).')
-                try:
-                    result=self._act(plan)
-                except Exception as action_error:
-                    # Treat an individual locator/action timeout as a recoverable step
-                    # failure. Feed the error back to the planner so it can re-inspect
-                    # the current DOM and choose an alternative verification strategy.
-                    result={
-                        'ok':False,
-                        'action':kind,
-                        'error_type':type(action_error).__name__,
-                        'error':str(action_error),
-                        'recovery_hint':'Re-inspect the current page and verify the intended outcome using alternative observable evidence. Do not repeat a consequential action blindly.'
-                    }
+                result=self._execute_action_with_recovery(plan)
                 if kind=='screenshot' and result.get('path'): artifacts.append(result['path'])
                 observation={'url':self.browser.page.url,'title':self.browser.page.title(),'result':result,'elements':self.browser.inspect(100)}
                 messages.append({'role':'assistant','content':json.dumps(plan,ensure_ascii=False)})
@@ -82,6 +70,27 @@ class Agent:
             if owns and self.browser:
                 try: self.browser.close()
                 finally: self.browser=None
+    def _execute_action_with_recovery(self, plan):
+        """Convert an individual browser-action exception into planner feedback.
+
+        This lets the bounded agent loop re-observe the page instead of aborting the
+        entire task on a transient locator timeout. It does not retry the action.
+        """
+        try:
+            return self._act(plan)
+        except Exception as action_error:
+            return {
+                'ok': False,
+                'action': plan.get('action'),
+                'error_type': type(action_error).__name__,
+                'error': str(action_error),
+                'recovery_hint': (
+                    'Re-inspect the current page and verify the intended outcome using '
+                    'alternative observable evidence. Do not repeat a consequential '
+                    'action blindly.'
+                ),
+            }
+
     def _act(self, plan):
         kind=plan['action']; page=self.browser.page
         if kind=='inspect': return {'ok':True,'elements':self.browser.inspect(180)}
