@@ -42,9 +42,11 @@ def screenshot(url:str=typer.Option(...),path:str=typer.Option('artifacts/page.p
     with WebAI(headless=headless) as web: web.open(url); print('Saved:',web.screenshot(path))
 
 @app.command()
-def run(url:str=typer.Option(...),task:str=typer.Option(...),planner:str=typer.Option('llm',help='llm or rules'),headless:bool=typer.Option(False)):
+def run(url:str=typer.Option(None,help='Optional starting URL; inferred from task when omitted'),task:str=typer.Option(...),planner:str=typer.Option('llm',help='llm or rules'),headless:bool=typer.Option(False)):
     """Run a bounded multi-step agent task. LLM planner is the default."""
     if planner.lower()=='rules':
+        if not url:
+            raise typer.BadParameter('The rules planner requires --url. Use --planner llm to enable automatic URL discovery.')
         with WebAI(headless=headless) as web:
             opened=web.open(url); outputs=[]
             for step in [x.strip() for x in task.split(' then ') if x.strip()]:
