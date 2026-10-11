@@ -36,6 +36,59 @@ def sensitive_task(text):
                 start = index + len(phrase)
     return False
 
+
+def _compact_elements(items, limit=24):
+    """Keep actionable locator evidence while avoiding oversized DOM prompts."""
+    fields = ("index", "tag", "type", "role", "name", "id", "testId",
+              "placeholder", "href", "disabled", "inShadowRoot", "page_index", "frame_index")
+    compact = []
+    for item in (items or [])[:limit]:
+        if not isinstance(item, dict):
+            continue
+        entry = {key: item[key] for key in fields if key in item and item[key] not in ("", None)}
+        for key in ("name", "id", "testId", "placeholder", "href"):
+            if isinstance(entry.get(key), str) and len(entry[key]) > 180:
+                entry[key] = entry[key][:177] + "..."
+        compact.append(entry)
+    return compact
+
+
+def _compact_overlays(overlays, limit=3):
+    """Keep only short overlay summaries and a few actionable buttons."""
+    compact = []
+    for overlay in (overlays or [])[-limit:]:
+        if not isinstance(overlay, dict):
+            continue
+        entry = {"category": overlay.get("category", "unknown")}
+        if overlay.get("text"):
+            entry["text"] = str(overlay["text"])[:350]
+        if overlay.get("meta"):
+            entry["meta"] = str(overlay["meta"])[:160]
+        buttons = []
+        for button in (overlay.get("buttons") or [])[:6]:
+            if isinstance(button, dict):
+                buttons.append({
+                    key: str(button[key])[:100] if isinstance(button.get(key), str) else button[key]
+                    for key in ("text", "ariaLabel", "title", "testId", "disabled")
+                    if key in button and button[key] not in ("", None)
+                })
+        if buttons:
+            entry["buttons"] = buttons
+        compact.append(entry)
+    return compact
+
+
+def _compact_result(result):
+    """Bound action feedback so a long extracted page text cannot flood history."""
+    if not isinstance(result, dict):
+        return result
+    compact = dict(result)
+    if isinstance(compact.get("text"), str) and len(compact["text"]) > 1800:
+        compact["text"] = compact["text"][:1800] + "... [text truncated]"
+    if isinstance(compact.get("elements"), list):
+        compact["elements"] = _compact_elements(compact["elements"], 24)
+    return compact
+
 class Agent:
     """Bounded observe-plan-act-verify loop using a configurable chat model."""
     def __init__(self, browser=None, llm=None, memory=None):
@@ -67,7 +120,15 @@ class Agent:
                 timings['navigation_seconds']=round(time.perf_counter()-phase,3)
             domain=urlparse(self.browser.page.url).netloc
             phase=time.perf_counter()
-            obs={'task':task,'page':opened,'elements':self.browser.inspect(60),'overlays':overlay_inventory(self.browser.page),'recent_runs':self.memory.recent_runs(4),'domain_notes':self.memory.notes_for(domain,4)}
+            # The first planner call must fit small local-model context windows.
+            # History and domain notes are useful later, but not worth bloating the
+            # initial prompt; the current goal and visible controls are sufficient.
+            obs={
+                'task':task,
+                'page':opened,
+                'elements':_compact_elements(self.browser.inspect(24), 24),
+                'overlays':_compact_overlays(overlay_inventory(self.browser.page), 3),
+            }
             timings['initial_observation_seconds']=round(time.perf_counter()-phase,3)
             messages=[{'role':'user','content':json.dumps({'goal':task,'observation':obs},ensure_ascii=False)}]
             failed_action_signatures = {}
@@ -111,10 +172,17 @@ class Agent:
                     failed_action_signatures.pop(signature, None)
                 if kind=='screenshot' and result.get('path'): artifacts.append(result['path'])
                 phase=time.perf_counter()
-                observation={'url':self.browser.page.url,'title':self.browser.page.title(),'result':result,'elements':self.browser.inspect(100),'overlays':overlay_inventory(self.browser.page)}
+                compact_result=_compact_result(result)
+                observation={
+                    'url':self.browser.page.url,
+                    'title':self.browser.page.title(),
+                    'result':compact_result,
+                    'elements':_compact_elements(self.browser.inspect(30), 30),
+                    'overlays':_compact_overlays(overlay_inventory(self.browser.page), 3),
+                }
                 timings['post_action_observation_seconds'].append(round(time.perf_counter()-phase,3))
                 messages.append({'role':'assistant','content':json.dumps(plan,ensure_ascii=False)})
-                messages.append({'role':'user','content':json.dumps({'execution_result':result,'updated_observation':observation,'instruction':'Verify progress and select exactly one next action. Do not repeat a successful action unnecessarily.'},ensure_ascii=False)})
+                messages.append({'role':'user','content':json.dumps({'execution_result':compact_result,'updated_observation':observation,'instruction':'Verify progress and select exactly one next action. Do not repeat a successful action unnecessarily.'},ensure_ascii=False)})
                 # Keep the original goal plus only the latest interaction context.
                 # Unbounded DOM snapshots inflate every OpenRouter request.
                 if len(messages) > 5:
