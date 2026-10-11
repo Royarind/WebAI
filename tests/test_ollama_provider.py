@@ -119,3 +119,25 @@ def test_parse_action_reports_malformed_field_types(payload, message):
 
     with pytest.raises(ValueError, match=message):
         LLMClient._parse_action(json.dumps(payload))
+
+
+def test_ollama_retries_invalid_locator_strategy_once(monkeypatch):
+    monkeypatch.setenv("WEBAI_LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("WEBAI_OLLAMA_MODEL", "qwen3:4b-instruct-8k")
+    calls = []
+
+    def fake_post(url, **kwargs):
+        calls.append(kwargs["json"])
+        action = (
+            '{"action":"fill","by":{"role":"textbox"},"value":"Search","text":"wireless mouse"}'
+            if len(calls) == 1 else
+            '{"action":"fill","by":"role","value":"textbox","name":"Search","text":"wireless mouse"}'
+        )
+        return FakeResponse({"choices": [{"message": {"content": action}}]})
+
+    monkeypatch.setattr("webai.llm.requests.post", fake_post)
+    action = LLMClient().next_action([{"role": "user", "content": "Search for wireless mouse"}])
+    assert len(calls) == 2
+    assert action["by"] == "role"
+    assert action["value"] == "textbox"
+    assert "previous JSON action was rejected" in calls[1]["messages"][-1]["content"]
