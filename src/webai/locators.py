@@ -83,7 +83,7 @@ def inventory(page, limit: int = 150) -> list[dict]:
 
 
 _OVERLAY_SCRIPT = r"""() => {
-  const norm = s => (s || '').replace(/\\s+/g, ' ').trim();
+  const norm = s => (s || '').replace(/\s+/g, ' ').trim();
   const visible = el => {
     const r = el.getBoundingClientRect(), s = getComputedStyle(el);
     return r.width > 0 && r.height > 0 && s.display !== 'none' &&
