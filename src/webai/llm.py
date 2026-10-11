@@ -43,31 +43,76 @@ class LLMClient:
             raise ValueError('Website discovery returned an invalid URL. Enter the website URL manually.')
         return candidate
 
+    @staticmethod
+    def _parse_action(content):
+        content = content.strip()
+        if content.startswith('```'):
+            content = content.split('\n', 1)[1].rsplit('```', 1)[0].strip()
+        obj = json.loads(content)
+        if not isinstance(obj, dict):
+            raise ValueError('Model response must be a JSON object.')
+        allowed = {'inspect','click','fill','select','check','read_text','screenshot','navigate','finish','ask_user'}
+        if obj.get('action') not in allowed:
+            raise ValueError('Model returned an unsupported action.')
+        if obj.get('action') in {'click','fill','select','check','read_text'}:
+            valid_by = {'role','label','placeholder','text','test_id','css','xpath'}
+            if obj.get('by') not in valid_by or not isinstance(obj.get('value'), str) or not obj['value'].strip():
+                raise ValueError('Model returned an invalid locator.')
+            obj['value'] = obj['value'].strip()
+        if obj.get('action') == 'fill' and not isinstance(obj.get('text'), str):
+            raise ValueError('Model omitted fill text.')
+        if obj.get('action') == 'navigate' and not str(obj.get('value','')).startswith(('http://','https://')):
+            raise ValueError('Only http(s) navigation is allowed.')
+        return obj
+
     def next_action(self, messages, screenshot_path=None):
-        s=self.settings
-        if not s.api_key: raise RuntimeError('WEBAI_LLM_API_KEY is empty; configure OpenRouter in .env.')
-        msgs=[{'role':'system','content':SYSTEM}]+messages
+        s = self.settings
+        if not s.api_key:
+            raise RuntimeError('WEBAI_LLM_API_KEY is empty; configure OpenRouter in .env.')
+        msgs = [{'role':'system','content':SYSTEM}] + list(messages)
         if screenshot_path and s.vision_enabled:
             try:
-                with open(screenshot_path,'rb') as f: encoded=base64.b64encode(f.read()).decode('ascii')
-                last=msgs[-1]
-                content=last.get('content','')
+                with open(screenshot_path,'rb') as f:
+                    encoded = base64.b64encode(f.read()).decode('ascii')
+                last = msgs[-1]
+                content = last.get('content','')
                 if isinstance(content,str):
-                    last['content']=[{'type':'text','text':content},{'type':'image_url','image_url':{'url':'data:image/png;base64,'+encoded}}]
-            except OSError: pass
-        r=requests.post(s.base_url+'/chat/completions',headers={'Authorization':'Bearer '+s.api_key,'Content-Type':'application/json'},json={'model':s.model,'temperature':0.1,'messages':msgs},timeout=(5, min(s.timeout, 30)))
-        if r.status_code>=400: raise RuntimeError(f'OpenRouter HTTP {r.status_code}: {r.text[:1000]}')
-        content=r.json()['choices'][0]['message']['content']
-        if isinstance(content,list): content=''.join(p.get('text','') for p in content if isinstance(p,dict))
-        content=content.strip()
-        if content.startswith('```'): content=content.split('\n',1)[1].rsplit('```',1)[0].strip()
-        obj=json.loads(content)
-        if not isinstance(obj,dict): raise ValueError('Model response must be a JSON object.')
-        allowed={'inspect','click','fill','select','check','read_text','screenshot','navigate','finish','ask_user'}
-        if obj.get('action') not in allowed: raise ValueError('Model returned an unsupported action.')
-        if obj.get('action') in {'click','fill','select','check','read_text'}:
-            if obj.get('by') not in {'role','label','placeholder','text','test_id','css','xpath'} or not isinstance(obj.get('value'),str) or not obj['value']:
-                raise ValueError('Model returned an invalid locator.')
-        if obj.get('action')=='fill' and not isinstance(obj.get('text'),str): raise ValueError('Model omitted fill text.')
-        if obj.get('action')=='navigate' and not str(obj.get('value','')).startswith(('http://','https://')): raise ValueError('Only http(s) navigation is allowed.')
-        return obj
+                    last['content'] = [
+                        {'type':'text','text':content},
+                        {'type':'image_url','image_url':{'url':'data:image/png;base64,'+encoded}}
+                    ]
+            except OSError:
+                pass
+
+        # A malformed locator should not terminate the entire browser task. Ask
+        # for one corrected action using the exact validation error, then fail
+        # clearly if the second response is still invalid.
+        for attempt in range(2):
+            r = requests.post(
+                s.base_url+'/chat/completions',
+                headers={'Authorization':'Bearer '+s.api_key,'Content-Type':'application/json'},
+                json={'model':s.model,'temperature':0.1,'messages':msgs},
+                timeout=(5, min(s.timeout, 30)),
+            )
+            if r.status_code >= 400:
+                raise RuntimeError(f'OpenRouter HTTP {r.status_code}: {r.text[:1000]}')
+            content = r.json()['choices'][0]['message']['content']
+            if isinstance(content,list):
+                content = ''.join(p.get('text','') for p in content if isinstance(p,dict))
+            try:
+                return self._parse_action(content)
+            except ValueError as exc:
+                if str(exc) != 'Model returned an invalid locator.' or attempt == 1:
+                    raise
+                msgs.append({'role':'assistant','content':content})
+                msgs.append({
+                    'role':'user',
+                    'content':(
+                        'Your previous action was rejected: Model returned an invalid locator. '
+                        'Return exactly one corrected JSON action. For click, fill, select, check, '
+                        'and read_text, by must be one of role, label, placeholder, text, test_id, css, xpath; '
+                        'value must be a non-empty string. For by=role, value is the role and name is the accessible name. '
+                        'Use only a locator grounded in the latest observation. Do not repeat the invalid action unchanged.'
+                    )
+                })
+        raise ValueError('Model could not provide a valid action after one correction attempt.')
