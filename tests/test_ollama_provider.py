@@ -159,3 +159,20 @@ def test_hosted_action_request_does_not_receive_ollama_json_mode(monkeypatch):
 
     assert action["action"] == "inspect"
     assert "response_format" not in captured["json"]
+
+
+def test_ollama_prompt_adds_no_think_and_explicit_fill_schema(monkeypatch):
+    monkeypatch.setenv("WEBAI_LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("WEBAI_OLLAMA_MODEL", "qwen3:4b-instruct-8k")
+    captured = {}
+
+    def fake_post(url, **kwargs):
+        captured.update(kwargs)
+        return FakeResponse({"choices": [{"message": {"content": '{"action":"inspect"}'}}]})
+
+    monkeypatch.setattr("webai.llm.requests.post", fake_post)
+    LLMClient().next_action([{"role": "user", "content": "Search for wireless mice"}])
+    system = captured["json"]["messages"][0]["content"]
+    assert "/no_think" in system
+    assert '"text":"wireless computer mice"' in system
+    assert "text is REQUIRED" in system
