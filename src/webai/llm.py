@@ -173,6 +173,18 @@ class LLMClient:
                 # For fill only, treat this as placeholder only when a non-empty field target exists.
                 if by == "value" and action == "fill":
                     by = "placeholder"
+                # Models sometimes emit descriptive locator names rather than the
+                # canonical enum. Normalize common variants before rejecting.
+                by = {
+                    "aria": "role", "aria_role": "role", "get_by_role": "role",
+                    "getbyrole": "role", "accessible": "role", "accessible_name": "role",
+                    "get_by_label": "label", "getbylabel": "label", "label_text": "label",
+                    "get_by_placeholder": "placeholder", "getbyplaceholder": "placeholder",
+                    "visible_text": "text", "get_by_text": "text", "getbytext": "text",
+                    "testid": "test_id", "data_test_id": "test_id", "data-testid": "test_id",
+                    "css_selector": "css", "css_path": "css", "selector": "css",
+                    "xpath_selector": "xpath", "xpath_expression": "xpath",
+                }.get(by, by)
                 obj["by"] = by
             if not isinstance(by, str) or by not in valid_by:
                 raise ValueError("Model returned an invalid locator strategy; expected one of role, label, placeholder, text, test_id, css, xpath.")
@@ -250,12 +262,12 @@ class LLMClient:
                 return self._parse_action(content)
             except (ValueError, json.JSONDecodeError) as exc:
                 if attempt == 2:
-                    # Avoid aborting a browser task on malformed model output.
-                    # Inspect the current page and let the next planner call recover.
+                    # Do not turn malformed planner output into a successful inspect
+                    # action: that used to repeat inspect and spend more provider calls.
                     return {
-                        "action": "inspect",
-                        "reason": f"Planner output was invalid after two correction attempts: {exc}",
-                        "summary": "Re-inspecting the live page after invalid planner output.",
+                        "action": "ask_user",
+                        "reason": f"Planner output remained invalid after two correction attempts: {exc}",
+                        "summary": "Paused because the model could not produce a valid browser action.",
                     }
                 msgs.append({"role": "assistant", "content": content})
                 msgs.append({
