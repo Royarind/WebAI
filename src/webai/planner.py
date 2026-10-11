@@ -3,7 +3,7 @@ import requests
 from dotenv import load_dotenv
 from .config import get_settings
 
-ALLOWED = {"inspect", "click", "fill", "screenshot", "read_text", "status"}
+ALLOWED = {"inspect", "click", "fill", "control", "screenshot", "read_text", "status"}
 LOCATORS = {"role", "label", "placeholder", "text", "test_id", "css", "xpath"}
 
 
@@ -42,7 +42,7 @@ def llm_plan(task: str) -> dict:
     if s.provider != "ollama":
         headers["Authorization"] = "Bearer " + s.api_key
     system = (
-        "Return one JSON object with action, by, value, name, text, path. Allowed actions: inspect, click, fill, screenshot, read_text, status. "
+        "Return one JSON object with action, by, value, name, text, path. Allowed actions: inspect, click, fill, control, screenshot, read_text, status. For sliders, dropdowns, and quantity controls, use control with operation set_value, choose, increment, or decrement and the appropriate target. "
         "Allowed locators: role, label, placeholder, text, test_id, css, xpath. Never plan purchases, payments, deletion, sending, publishing, or security bypass. JSON only."
     )
     try:
