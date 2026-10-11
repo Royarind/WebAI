@@ -167,7 +167,7 @@ class LLMClient:
             valid_by = {"role", "label", "placeholder", "text", "test_id", "css", "xpath"}
             by = obj.get("by")
             if isinstance(by, str):
-                by = by.strip().lower().replace("-", "_").replace(" ", "_")
+                by = by.strip().lower().strip(" .,:;!?\\t\\r\\n").replace("-", "_").replace(" ", "_")
                 by = {"testid": "test_id", "data_test_id": "test_id", "accessible_name": "role", "css_selector": "css", "xpath_selector": "xpath"}.get(by, by)
                 obj["by"] = by
             if not isinstance(by, str) or by not in valid_by:
@@ -222,7 +222,7 @@ class LLMClient:
 
         # Give local models one chance to correct malformed JSON/action fields.
         # Never execute a locator that fails validation.
-        for attempt in range(2):
+        for attempt in range(3):
             request_payload = {
                 "model": s.model,
                 "temperature": 0.1,
@@ -238,7 +238,7 @@ class LLMClient:
             try:
                 return self._parse_action(content)
             except (ValueError, json.JSONDecodeError) as exc:
-                if attempt == 1:
+                if attempt == 2:
                     raise ValueError(
                         f"Model returned an invalid action after one correction attempt: {exc}"
                     ) from exc
@@ -247,7 +247,7 @@ class LLMClient:
                     "role": "user",
                     "content": (
                         f"Your previous JSON action was rejected: {exc}. "
-                        "Return ONE corrected JSON object only, no markdown. "
+                        "Return ONE corrected JSON object only, no markdown. This is a strict schema; do not add punctuation to action or by values. "
                         "Use action as a string: inspect, click, fill, select, check, "
                         "read_text, screenshot, navigate, finish, or ask_user. "
                         "For click/fill/select/check/read_text, by MUST be a plain string "
@@ -257,4 +257,4 @@ class LLMClient:
                         "action, by, or value. Normalize by to exactly one lowercase value: role, label, placeholder, text, test_id, css, xpath. For Amazon search, use the exact visible search field label or placeholder, then click the unique Search button or use a supported action to submit. Ground the locator in the observation."
                     ),
                 })
-        raise ValueError("Model could not provide a valid action after one correction attempt.")
+        raise ValueError("Model could not provide a valid action after two correction attempts.")
