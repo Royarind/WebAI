@@ -39,6 +39,45 @@ def sensitive_task(text):
     return False
 
 
+def _requested_price_ceiling(task):
+    """Extract a simple requested price ceiling so the agent cannot silently choose a lower band."""
+    text = str(task or "")
+    patterns = [
+        r"(?:below|under|less than|maximum|max(?:imum)? price(?: of)?|priced? at most)\\s*(?:₹|rs\\.?\\s*)?([\\d,]+)",
+        r"(?:₹|rs\\.?\\s*)([\\d,]+)\\s*(?:or less|maximum|max|and below)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.I)
+        if match:
+            try:
+                return int(match.group(1).replace(",", ""))
+            except ValueError:
+                pass
+    return None
+
+
+def _filter_price_mismatch(task, plan):
+    """Reject a proposed explicit price band that is stricter than the user's ceiling."""
+    ceiling = _requested_price_ceiling(task)
+    if ceiling is None or plan.get("action") not in {"click", "select"}:
+        return None
+    target = " ".join(str(plan.get(key, "")) for key in ("value", "name", "text", "option"))
+    match = re.search(r"(?:under|up to|upto|less than|below)\\s*(?:₹|rs\\.?\\s*)?([\\d,]+)", target, re.I)
+    if not match:
+        return None
+    try:
+        band = int(match.group(1).replace(",", ""))
+    except ValueError:
+        return None
+    if band < ceiling:
+        return {
+            "requested_ceiling": ceiling,
+            "proposed_ceiling": band,
+            "reason": f"The proposed price filter is ₹{band}, but the user requested products below ₹{ceiling}. Do not apply this narrower filter. Find a matching price band or use the custom price range.",
+        }
+    return None
+
+
 def _compact_elements(items, limit=24):
     """Keep actionable locator evidence while avoiding oversized DOM prompts."""
     fields = ("index", "tag", "type", "role", "name", "id", "testId",
@@ -173,6 +212,13 @@ class Agent:
                     status='needs_input'; summary=plan.get('summary') or plan.get('reason') or 'The agent needs clarification.'
                     intervention=detect_intervention(self.browser.page, task=task, overlays=overlay_inventory(self.browser.page), reason=summary) or {'type':'user_input_required','title':'WebAI needs your input','reason':summary[:300],'url':self.browser.page.url,'user_action':'Provide the missing information in the browser or clarify the task, then resume.'}
                     break
+                mismatch = _filter_price_mismatch(task, plan)
+                if mismatch:
+                    messages.append({'role':'assistant','content':json.dumps(plan,ensure_ascii=False)})
+                    messages.append({'role':'user','content':json.dumps({'instruction':mismatch['reason'],'price_filter_guard':mismatch,'updated_observation':{'url':self.browser.page.url,'title':self.browser.page.title(),'elements':_compact_elements(self.browser.inspect(30),30),'overlays':_compact_overlays(overlay_inventory(self.browser.page),3)}} ,ensure_ascii=False)})
+                    if len(messages) > 5:
+                        messages = [messages[0]] + messages[-4:]
+                    continue
                 # Consequential actions are not permanently blocked. Pause before
                 # execution and return the exact proposed action for explicit approval.
                 action_description = ' '.join(str(plan.get(key, '')) for key in ('text', 'value', 'name', 'option'))
