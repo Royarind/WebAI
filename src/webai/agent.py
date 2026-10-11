@@ -124,7 +124,7 @@ class Agent:
             domain=urlparse(self.browser.page.url).netloc
             # Use locally configured profile data and existing browser autofill before asking the model.
             # Secrets are filled in the browser process and are never placed in the LLM prompt or run history.
-            autofill_known_profile(self.browser.page)
+            profile_filled=autofill_known_profile(self.browser.page)
             phase=time.perf_counter()
             # The first planner call must fit small local-model context windows.
             # History and domain notes are useful later, but not worth bloating the
@@ -137,6 +137,8 @@ class Agent:
             }
             timings['initial_observation_seconds']=round(time.perf_counter()-phase,3)
             intervention=detect_intervention(self.browser.page, task=task, overlays=obs.get('overlays'))
+            if intervention and intervention.get('type') == 'contact_input_required' and {'phone','email'}.intersection(profile_filled):
+                intervention=None
             messages=[{'role':'user','content':json.dumps({'goal':task,'observation':obs},ensure_ascii=False)}]
             failed_action_signatures = {}
             if intervention:
@@ -195,6 +197,9 @@ class Agent:
                 }
                 timings['post_action_observation_seconds'].append(round(time.perf_counter()-phase,3))
                 detected=detect_intervention(self.browser.page, task=task, overlays=observation.get('overlays'))
+                if detected and detected.get('type') == 'contact_input_required':
+                    newly_filled=autofill_known_profile(self.browser.page)
+                    if {'phone','email'}.intersection(newly_filled): detected=None
                 if detected:
                     intervention=detected; status='needs_input'; summary=detected.get('reason','Human intervention is required.')
                     break
