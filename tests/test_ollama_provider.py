@@ -97,7 +97,7 @@ def test_ollama_connection_error_has_actionable_message(monkeypatch):
 def test_hosted_provider_still_requires_api_key(monkeypatch):
     monkeypatch.setenv("WEBAI_LLM_PROVIDER", "openrouter")
     monkeypatch.setenv("WEBAI_LLM_BASE_URL", "https://openrouter.ai/api/v1")
-    monkeypatch.delenv("WEBAI_LLM_API_KEY", raising=False)
+    monkeypatch.setenv("WEBAI_LLM_API_KEY", "")
 
     with pytest.raises(RuntimeError, match="WEBAI_LLM_API_KEY is empty"):
         LLMClient().next_action([{"role": "user", "content": "Inspect the page"}])
