@@ -45,7 +45,19 @@ class Agent:
                 if kind in {'click','select','check'} and sensitive(str(plan.get('value',''))+' '+str(plan.get('name',''))):
                     raise PermissionError('Blocked a control whose locator appears to describe a consequential action.')
                 if kind=='navigate' and not plan.get('value','').startswith(('http://','https://')): raise ValueError('Navigation must use http(s).')
-                result=self._act(plan)
+                try:
+                    result=self._act(plan)
+                except Exception as action_error:
+                    # Treat an individual locator/action timeout as a recoverable step
+                    # failure. Feed the error back to the planner so it can re-inspect
+                    # the current DOM and choose an alternative verification strategy.
+                    result={
+                        'ok':False,
+                        'action':kind,
+                        'error_type':type(action_error).__name__,
+                        'error':str(action_error),
+                        'recovery_hint':'Re-inspect the current page and verify the intended outcome using alternative observable evidence. Do not repeat a consequential action blindly.'
+                    }
                 if kind=='screenshot' and result.get('path'): artifacts.append(result['path'])
                 observation={'url':self.browser.page.url,'title':self.browser.page.title(),'result':result,'elements':self.browser.inspect(100)}
                 messages.append({'role':'assistant','content':json.dumps(plan,ensure_ascii=False)})
