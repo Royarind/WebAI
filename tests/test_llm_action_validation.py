@@ -83,3 +83,26 @@ def test_next_action_does_not_retry_unsupported_action(monkeypatch):
         client.next_action([{"role": "user", "content": "Do a task"}])
 
     assert len(calls) == 1
+
+
+
+@pytest.mark.parametrize("raw_by,expected", [
+    ("get_by_placeholder", "placeholder"),
+    ("getByRole('button')", "role"),
+    ("locator strategy: css", "css"),
+    ({"strategy": "label"}, "label"),
+])
+def test_next_action_normalizes_playwright_style_locator_strategies(monkeypatch, raw_by, expected):
+    client = make_client()
+    payload = {"action": "click", "by": raw_by, "value": "Search"}
+    if expected == "role":
+        payload["name"] = "Search"
+    response_content = json.dumps(payload)
+
+    monkeypatch.setattr(
+        "webai.llm.requests.post",
+        lambda url, **kwargs: FakeResponse(response_content),
+    )
+
+    action = client.next_action([{"role": "user", "content": "Click Search"}])
+    assert action["by"] == expected
