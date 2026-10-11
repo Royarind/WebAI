@@ -169,6 +169,10 @@ class LLMClient:
             if isinstance(by, str):
                 by = by.strip().lower().strip(" .,:;!?\\t\\r\\n").replace("-", "_").replace(" ", "_")
                 by = {"testid": "test_id", "data_test_id": "test_id", "accessible_name": "role", "css_selector": "css", "xpath_selector": "xpath"}.get(by, by)
+                # Some models misuse "value" as a locator strategy for a named input.
+                # For fill only, treat this as placeholder only when a non-empty field target exists.
+                if by == "value" and action == "fill":
+                    by = "placeholder"
                 obj["by"] = by
             if not isinstance(by, str) or by not in valid_by:
                 raise ValueError("Model returned an invalid locator strategy; expected one of role, label, placeholder, text, test_id, css, xpath.")
