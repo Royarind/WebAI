@@ -233,6 +233,46 @@ class LLMClient:
             raise ValueError("Only http(s) navigation is allowed.")
         return obj
 
+    @staticmethod
+    def _search_fallback(messages):
+        """Use observed search input metadata when the model repeatedly emits invalid locators."""
+        try:
+            initial = next(
+                json.loads(message.get("content", ""))
+                for message in messages
+                if message.get("role") == "user"
+                and isinstance(message.get("content"), str)
+                and '"observation"' in message.get("content", "")
+            )
+            goal = str(initial.get("goal", ""))
+            observation = initial.get("observation", {})
+            page = observation.get("page", {})
+            url = str(page.get("url", "")).lower()
+            if not any(site in url for site in ("amazon.",)):
+                return None
+            match = re.search(r"\\bsearch\\s+(?:for\\s+)?(.+?)(?:\\.|$)", goal, re.I)
+            if not match:
+                return None
+            query = match.group(1).strip().rstrip(".")
+            elements = observation.get("elements", [])
+            candidates = []
+            for item in elements:
+                if not isinstance(item, dict) or item.get("tag") != "input" or item.get("disabled"):
+                    continue
+                description = " ".join(str(item.get(key, "")) for key in ("name", "placeholder", "id", "type")).lower()
+                if "search" in description and item.get("placeholder"):
+                    candidates.append(item)
+            if len(candidates) == 1:
+                return {
+                    "action": "fill", "by": "placeholder",
+                    "value": str(candidates[0]["placeholder"]), "text": query,
+                    "reason": "Used the uniquely observed Amazon search input after planner locator validation failed.",
+                    "summary": "Entering the requested search query using the observed search field.",
+                }
+        except (ValueError, TypeError, StopIteration, json.JSONDecodeError):
+            return None
+        return None
+
     def next_action(self, messages, screenshot_path=None):
         s = self.settings
         self._headers()  # Fail early when a hosted provider key is missing.
@@ -284,6 +324,14 @@ class LLMClient:
                 return self._parse_action(content)
             except (ValueError, json.JSONDecodeError) as exc:
                 if attempt == 2:
+                    # Recover this common case deterministically from the initial
+                    # observation instead of asking the user to do work the browser
+                    # can safely perform. Never invent a selector: require one
+                    # uniquely observed Amazon search input.
+                    if "invalid locator strategy" in str(exc).lower():
+                        fallback = self._search_fallback(messages)
+                        if fallback:
+                            return fallback
                     # Do not turn malformed planner output into a successful inspect
                     # action: that used to repeat inspect and spend more provider calls.
                     return {
