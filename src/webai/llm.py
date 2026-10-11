@@ -152,7 +152,13 @@ class LLMClient:
         if not isinstance(obj, dict):
             raise ValueError("Model response must be a JSON object.")
         allowed = {"inspect", "click", "fill", "select", "check", "read_text", "screenshot", "navigate", "finish", "ask_user"}
-        if obj.get("action") not in allowed:
+        action = obj.get("action")
+        # Validate the type before set membership: malformed model JSON may
+        # provide an object/list here, which otherwise raises an opaque
+        # "unhashable type" TypeError.
+        if not isinstance(action, str):
+            raise ValueError("Model returned an invalid action field; expected a string.")
+        if action not in allowed:
             raise ValueError("Model returned an unsupported action.")
         if obj.get("action") in {"click", "fill", "select", "check", "read_text"}:
             valid_by = {"role", "label", "placeholder", "text", "test_id", "css", "xpath"}
