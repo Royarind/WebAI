@@ -14,3 +14,10 @@ def test_parse_action_normalizes_common_locator_aliases():
         '{"action":"click","by":"CSS Selector","value":"button[type=submit]"}'
     )
     assert action["by"] == "css"
+
+
+def test_parse_action_normalizes_trailing_punctuation_in_locator():
+    action = LLMClient._parse_action(
+        '{"action":"click","by":"xpath,","value":"//button[@type=submit]"}'
+    )
+    assert action["by"] == "xpath"
