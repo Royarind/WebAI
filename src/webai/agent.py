@@ -4,6 +4,7 @@ from .browser import WebAI
 from .config import get_settings
 from .llm import LLMClient
 from .memory import Memory
+from .locators import overlay_inventory
 
 BLOCKED=('purchase','buy now','pay now','payment','delete','remove account','send email','send message','submit order','place order','transfer money','publish','confirm booking','finalize order')
 def sensitive(text):
@@ -26,7 +27,7 @@ class Agent:
             elif self.browser.page: opened=self.browser.status()
             else: raise ValueError('Provide a URL or an existing browser session.')
             domain=urlparse(self.browser.page.url).netloc
-            obs={'task':task,'page':opened,'elements':self.browser.inspect(60),'recent_runs':self.memory.recent_runs(4),'domain_notes':self.memory.notes_for(domain,4)}
+            obs={'task':task,'page':opened,'elements':self.browser.inspect(60),'overlays':overlay_inventory(self.browser.page),'recent_runs':self.memory.recent_runs(4),'domain_notes':self.memory.notes_for(domain,4)}
             messages=[{'role':'user','content':json.dumps({'goal':task,'observation':obs},ensure_ascii=False)}]
             for i in range(self.settings.max_steps):
                 # Capturing full-page screenshots on every step is expensive and
@@ -53,7 +54,7 @@ class Agent:
                 if kind=='navigate' and not plan.get('value','').startswith(('http://','https://')): raise ValueError('Navigation must use http(s).')
                 result=self._execute_action_with_recovery(plan)
                 if kind=='screenshot' and result.get('path'): artifacts.append(result['path'])
-                observation={'url':self.browser.page.url,'title':self.browser.page.title(),'result':result,'elements':self.browser.inspect(100)}
+                observation={'url':self.browser.page.url,'title':self.browser.page.title(),'result':result,'elements':self.browser.inspect(100),'overlays':overlay_inventory(self.browser.page)}
                 messages.append({'role':'assistant','content':json.dumps(plan,ensure_ascii=False)})
                 messages.append({'role':'user','content':json.dumps({'execution_result':result,'updated_observation':observation,'instruction':'Verify progress and select exactly one next action. Do not repeat a successful action unnecessarily.'},ensure_ascii=False)})
                 # Keep the original goal plus only the latest interaction context.

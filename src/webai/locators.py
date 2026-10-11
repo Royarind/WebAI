@@ -79,3 +79,50 @@ def inventory_context(context, limit: int = 150) -> list[dict]:
 
 def inventory(page, limit: int = 150) -> list[dict]:
     return inventory_context(page.context, limit)
+
+
+
+_OVERLAY_SCRIPT = r"""() => {
+  const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+  const visible = el => {
+    const r = el.getBoundingClientRect(), s = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && s.display !== 'none' &&
+      s.visibility !== 'hidden' && Number(s.opacity || 1) > 0;
+  };
+  const selector = '[role="dialog"],[aria-modal="true"],dialog[open],[data-testid*="modal" i],[class*="modal" i]';
+  const roots = Array.from(document.querySelectorAll(selector)).filter(visible);
+  return roots.slice(-8).map((el, index) => {
+    const buttons = Array.from(el.querySelectorAll(
+      'button,a,[role="button"],input[type="button"],input[type="submit"]'
+    )).filter(visible).slice(0, 20).map(btn => ({
+      text: norm(btn.innerText || btn.value || ''),
+      ariaLabel: btn.getAttribute('aria-label') || '',
+      title: btn.getAttribute('title') || '',
+      testId: btn.getAttribute('data-testid') || '',
+      disabled: !!btn.disabled
+    }));
+    const text = norm(el.innerText || '').slice(0, 1000);
+    const meta = norm([
+      el.id || '', typeof el.className === 'string' ? el.className : '',
+      el.getAttribute('data-testid') || '', el.getAttribute('aria-label') || ''
+    ].join(' '));
+    const lower = (text + ' ' + meta + ' ' + buttons.map(b =>
+      b.text + ' ' + b.ariaLabel + ' ' + b.title + ' ' + b.testId
+    ).join(' ')).toLowerCase();
+    let category = 'unknown';
+    if (/cookie|privacy preference|consent/.test(lower)) category = 'cookie_consent';
+    else if (/newsletter|sign up for.*email|marketing|special offer|promo code|discount/.test(lower)) category = 'marketing';
+    else if (/location|geolocation|your region|set your country|choose your country|zip code/.test(lower)) category = 'location_confirmation';
+    else if (/shopping bag|view bag|cart|basket|checkout/.test(lower)) category = 'task_flow';
+    else if (/sign in|log in|create an account/.test(lower)) category = 'authentication';
+    return {index, category, text, meta, buttons};
+  });
+}""";
+
+
+def overlay_inventory(page) -> list[dict]:
+    """Describe visible DOM overlays without dismissing or clicking them."""
+    try:
+        return page.evaluate(_OVERLAY_SCRIPT) or []
+    except Exception as exc:
+        return [{"category": "inspection_error", "error": type(exc).__name__}]
