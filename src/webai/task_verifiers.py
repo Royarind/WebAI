@@ -6,12 +6,13 @@ They are conservative: inconclusive evidence returns verified=False.
 from __future__ import annotations
 
 from typing import Any
+import time
 
 
 SUPPORTED_VERIFIERS = {"text_present", "selected_option", "cart_contains"}
 
 
-def verify_task_outcome(page: Any, verifier: str, target: str) -> dict:
+def _verify_task_outcome_once(page: Any, verifier: str, target: str) -> dict:
     """Run a named verification check against the live page.
 
     - text_present: target phrase is present in rendered page text.
@@ -100,3 +101,40 @@ def verify_task_outcome(page: Any, verifier: str, target: str) -> dict:
             "target": target,
             "reason": f"{type(exc).__name__}: {exc}",
         }
+
+
+def verify_task_outcome(
+    page: Any,
+    verifier: str,
+    target: str,
+    *,
+    timeout_ms: int = 1200,
+    interval_ms: int = 100,
+) -> dict:
+    """Poll a task-specific verifier briefly to allow asynchronous UI updates.
+
+    The verifier is re-evaluated against the live DOM until it succeeds or the
+    bounded timeout expires. It never repeats the user action.
+    """
+    if verifier not in SUPPORTED_VERIFIERS or not (target or "").strip():
+        return _verify_task_outcome_once(page, verifier, target)
+
+    timeout_ms = max(0, int(timeout_ms))
+    interval_ms = max(10, int(interval_ms))
+    deadline = time.monotonic() + timeout_ms / 1000
+    last = _verify_task_outcome_once(page, verifier, target)
+    while not last.get("verified") and time.monotonic() < deadline:
+        remaining_ms = max(0, int((deadline - time.monotonic()) * 1000))
+        if remaining_ms <= 0:
+            break
+        try:
+            page.wait_for_timeout(min(interval_ms, remaining_ms))
+        except Exception:
+            break
+        last = _verify_task_outcome_once(page, verifier, target)
+    last["polling"] = {
+        "timeout_ms": timeout_ms,
+        "interval_ms": interval_ms,
+        "verified_after_polling": bool(last.get("verified")),
+    }
+    return last
