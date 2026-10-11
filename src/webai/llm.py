@@ -166,7 +166,22 @@ class LLMClient:
         if action in {"click", "fill", "select", "check", "control", "read_text"}:
             valid_by = {"role", "label", "placeholder", "text", "test_id", "css", "xpath"}
             by = obj.get("by")
+            # Models occasionally serialize the locator as an object instead of
+            # the required enum string. Accept only explicit strategy fields; do
+            # not infer a selector from arbitrary page text.
+            if isinstance(by, dict):
+                by = next((by.get(key) for key in ("strategy", "type", "by", "method", "locator")
+                           if isinstance(by.get(key), str) and by.get(key).strip()), None)
             if isinstance(by, str):
+                raw_by = by.strip().lower()
+                # Accept common Playwright-style spellings such as getByRole(...)
+                # or "locator strategy: placeholder", but only canonicalize a
+                # recognized strategy token.
+                import re
+                match = re.search(r"(?:get[_]?by[_]?(role|label|placeholder|text|test[_]?id)|\\b(role|label|placeholder|text|test[_]?id|css|xpath)\\b)", raw_by)
+                if match:
+                    token = next((group for group in match.groups() if group), "")
+                    by = token
                 by = by.strip().lower().strip(" .,:;!?\\t\\r\\n").replace("-", "_").replace(" ", "_")
                 by = {"testid": "test_id", "data_test_id": "test_id", "accessible_name": "role", "css_selector": "css", "xpath_selector": "xpath"}.get(by, by)
                 # Some models misuse "value" as a locator strategy for a named input.
@@ -187,7 +202,14 @@ class LLMClient:
                 }.get(by, by)
                 obj["by"] = by
             if not isinstance(by, str) or by not in valid_by:
-                raise ValueError("Model returned an invalid locator strategy; expected one of role, label, placeholder, text, test_id, css, xpath.")
+                raw_by = obj.get("by")
+                shown_by = repr(raw_by)
+                if len(shown_by) > 120:
+                    shown_by = shown_by[:117] + "..."
+                raise ValueError(
+                    f"Model returned invalid locator strategy by={shown_by}; expected one of "
+                    "role, label, placeholder, text, test_id, css, xpath. Return by as a plain string."
+                )
             value = obj.get("value")
             if not isinstance(value, str) or not value.strip():
                 raise ValueError("Model returned an invalid locator value; expected a non-empty string.")
