@@ -51,3 +51,34 @@ async def test_click_with_dom_intelligence():
         )
         assert res["status"] == "success"
         await browser.close()
+
+
+def test_click_uses_dom_intelligence_when_original_locator_is_missing():
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content(
+            '<div><section><button aria-label="Target action" '
+            'onclick="this.textContent=\'Action completed\'">Run</button></section></div>'
+        )
+        result = click(page, "css", "#outdated-selector", "Target action")
+        assert result["ok"] is True
+        assert result["healed"]["to"]["strategy"] == "sync_dom_intelligence"
+        assert page.get_by_role("button", name="Target action").inner_text() == "Action completed"
+        browser.close()
+
+
+def test_dom_intelligence_rejects_ambiguous_candidates():
+    from webai.sync_dom_intelligence import SyncDOMIntelligence
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content(
+            '<button aria-label="Target action">First</button>'
+            '<button aria-label="Target action">Second</button>'
+        )
+        import pytest
+        with pytest.raises(ValueError, match="ambiguous"):
+            SyncDOMIntelligence(page).resolve("Target action")
+        browser.close()
