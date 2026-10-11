@@ -89,6 +89,7 @@ def test_next_action_does_not_retry_unsupported_action(monkeypatch):
 @pytest.mark.parametrize("raw_by,expected", [
     ("get_by_placeholder", "placeholder"),
     ("placeholde", "placeholder"),
+    ("ole", "role"),
     ("getByRole('button')", "role"),
     ("locator strategy: css", "css"),
     ({"strategy": "label"}, "label"),
@@ -136,3 +137,26 @@ def test_invalid_locator_uses_uniquely_observed_amazon_search_field(monkeypatch)
     assert action["value"] == "Search Amazon.in"
     assert action["text"] == "wireless computer mice"
     assert len(calls) == 3
+
+
+
+def test_invalid_locator_uses_uniquely_observed_google_search_field(monkeypatch):
+    client = make_client()
+    monkeypatch.setattr(
+        "webai.llm.requests.post",
+        lambda url, **kwargs: FakeResponse('{"action":"click","by":"unknown","value":""}'),
+    )
+    initial = {
+        "goal": "Search for weather forecast.",
+        "observation": {
+            "page": {"url": "https://www.google.com/", "title": "Google"},
+            "elements": [
+                {"tag": "input", "type": "text", "name": "Search", "placeholder": "Search", "disabled": False}
+            ],
+        },
+    }
+    action = client.next_action([{"role": "user", "content": json.dumps(initial)}])
+    assert action["action"] == "fill"
+    assert action["by"] == "placeholder"
+    assert action["value"] == "Search"
+    assert action["text"] == "weather forecast"
