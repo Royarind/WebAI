@@ -16,26 +16,35 @@ class Agent:
     def __init__(self, browser=None, llm=None, memory=None):
         self.settings=get_settings(); self.browser=browser; self.llm=llm or LLMClient(); self.memory=memory or Memory(self.settings.memory_path)
     def run(self, task, url=None):
-        start=time.time(); artifacts=[]; trace=[]; status='failed'; summary=''; owns=False
+        start=time.time(); perf_start=time.perf_counter(); artifacts=[]; trace=[]; status='failed'; summary=''; owns=False
+        timings={'browser_start_seconds':0.0,'url_discovery_seconds':0.0,'navigation_seconds':0.0,'initial_observation_seconds':0.0,'planning_seconds':[],'action_seconds':[],'post_action_observation_seconds':[],'finalization_seconds':0.0}
         try:
             if sensitive(task): raise PermissionError('Blocked by default: the task appears to involve a consequential action. Use an explicitly reviewed workflow for this action.')
             owns=self.browser is None
             if owns:
+                phase=time.perf_counter()
                 self.browser=WebAI(headless=self.settings.headless)
                 self.browser.start()
+                timings['browser_start_seconds']=round(time.perf_counter()-phase,3)
             if url:
-                opened=self.browser.open(url)
+                phase=time.perf_counter(); opened=self.browser.open(url)
+                timings['navigation_seconds']=round(time.perf_counter()-phase,3)
             elif not owns and self.browser.page:
-                opened=self.browser.status()
+                phase=time.perf_counter(); opened=self.browser.status()
+                timings['navigation_seconds']=round(time.perf_counter()-phase,3)
             else:
                 # Resolve the starting site only when no URL or open page exists.
-                url=self.llm.resolve_start_url(task)
+                phase=time.perf_counter(); url=self.llm.resolve_start_url(task)
+                timings['url_discovery_seconds']=round(time.perf_counter()-phase,3)
                 parsed=urlparse(url)
                 if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
                     raise ValueError('Automatic website discovery did not return a valid http(s) URL. Provide a URL or clarify the intended website.')
-                opened=self.browser.open(url)
+                phase=time.perf_counter(); opened=self.browser.open(url)
+                timings['navigation_seconds']=round(time.perf_counter()-phase,3)
             domain=urlparse(self.browser.page.url).netloc
+            phase=time.perf_counter()
             obs={'task':task,'page':opened,'elements':self.browser.inspect(60),'overlays':overlay_inventory(self.browser.page),'recent_runs':self.memory.recent_runs(4),'domain_notes':self.memory.notes_for(domain,4)}
+            timings['initial_observation_seconds']=round(time.perf_counter()-phase,3)
             messages=[{'role':'user','content':json.dumps({'goal':task,'observation':obs},ensure_ascii=False)}]
             for i in range(self.settings.max_steps):
                 # Capturing full-page screenshots on every step is expensive and
@@ -47,7 +56,8 @@ class Agent:
                         artifacts.append(shot)
                     except Exception:
                         pass
-                plan=self.llm.next_action(messages,shot)
+                phase=time.perf_counter(); plan=self.llm.next_action(messages,shot)
+                timings['planning_seconds'].append(round(time.perf_counter()-phase,3))
                 trace.append({'step':i+1,'plan':plan})
                 kind=plan['action']
                 if kind=='finish':
@@ -60,9 +70,12 @@ class Agent:
                 if kind in {'click','select','check'} and sensitive(str(plan.get('value',''))+' '+str(plan.get('name',''))):
                     raise PermissionError('Blocked a control whose locator appears to describe a consequential action.')
                 if kind=='navigate' and not plan.get('value','').startswith(('http://','https://')): raise ValueError('Navigation must use http(s).')
-                result=self._execute_action_with_recovery(plan)
+                phase=time.perf_counter(); result=self._execute_action_with_recovery(plan)
+                timings['action_seconds'].append(round(time.perf_counter()-phase,3))
                 if kind=='screenshot' and result.get('path'): artifacts.append(result['path'])
+                phase=time.perf_counter()
                 observation={'url':self.browser.page.url,'title':self.browser.page.title(),'result':result,'elements':self.browser.inspect(100),'overlays':overlay_inventory(self.browser.page)}
+                timings['post_action_observation_seconds'].append(round(time.perf_counter()-phase,3))
                 messages.append({'role':'assistant','content':json.dumps(plan,ensure_ascii=False)})
                 messages.append({'role':'user','content':json.dumps({'execution_result':result,'updated_observation':observation,'instruction':'Verify progress and select exactly one next action. Do not repeat a successful action unnecessarily.'},ensure_ascii=False)})
                 # Keep the original goal plus only the latest interaction context.
@@ -73,7 +86,8 @@ class Agent:
                     messages.append({'role':'user','content':'The action did not verify. Reinspect and recover; do not blindly repeat.'})
             else:
                 status='step_limit'; summary=f'Stopped at configured limit ({self.settings.max_steps} steps).'
-            report={'status':status,'summary':summary,'steps':trace,'artifacts':artifacts,'elapsed_seconds':round(time.time()-start,2),'url':self.browser.page.url if self.browser and self.browser.page else None}
+            timings['finalization_seconds']=round(time.perf_counter()-perf_start-sum(timings['browser_start_seconds'] for _ in [0])-timings['url_discovery_seconds']-timings['navigation_seconds']-timings['initial_observation_seconds']-sum(timings['planning_seconds'])-sum(timings['action_seconds'])-sum(timings['post_action_observation_seconds']),3)
+            report={'status':status,'summary':summary,'steps':trace,'artifacts':artifacts,'elapsed_seconds':round(time.time()-start,2),'url':self.browser.page.url if self.browser and self.browser.page else None,'timings_seconds':timings}
             if status=='completed': self.memory.add_note(domain,summary,{'task':task,'steps':len(trace)})
             return report
         except Exception as e:
