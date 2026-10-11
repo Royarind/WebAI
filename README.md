@@ -79,3 +79,22 @@ WebAI's LLM client can use Ollama's OpenAI-compatible chat-completions endpoint 
 5. Run WebAI as usual. If Ollama is not running or the model is missing, WebAI reports a provider-specific error. It does not silently switch providers or bypass existing action validation, safety handling, recovery or verification.
 
 To return to the existing hosted setup, set `WEBAI_LLM_PROVIDER=openrouter` (or remove that variable) and keep your current hosted-provider configuration. Ollama uses the same action-planning schema, so local model output still passes through the existing validation.
+
+
+## Human intervention and saved profile data
+
+WebAI pauses with a structured `intervention` when it encounters a CAPTCHA/anti-bot challenge, sign-in or identity verification, explicitly required contact details, a blocking modal, a repeated failing action, a step limit, a missing user decision, or a consequential action awaiting approval. The dashboard keeps the visible browser open; complete the step yourself and use **Resume after intervention**. WebAI does not bypass CAPTCHA, MFA, or access controls.
+
+Before planning, WebAI attempts local-only autofill for blank, visible and clearly labelled name, email, phone, address and password fields. Values are read from these optional environment variables:
+
+```dotenv
+WEBAI_PROFILE_NAME=
+WEBAI_PROFILE_EMAIL=
+WEBAI_PROFILE_PHONE=
+WEBAI_PROFILE_ADDRESS=
+WEBAI_PROFILE_PASSWORD=
+```
+
+Set only the fields you actually want WebAI to use. Keep these values in a local, untracked `.env` file or your operating system's secret manager; never commit them. Passwords are filled directly into the browser process and are **not** added to LLM prompts or WebAI run history. WebAI never overwrites an already-populated field, submits a form just because it autofilled it, or uses saved profile values for CAPTCHA/MFA/one-time-code/card-security fields. Existing signed-in browser sessions, site account details, and browser/password-manager autofill can also supply values when the site exposes them in the active browser session.
+
+If no suitable saved value exists, WebAI asks for human intervention instead of inventing a name, phone number, email, address or password. The current implementation reads local profile values from environment variables; it does not yet integrate with a separate password vault or third-party wallet API.
