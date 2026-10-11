@@ -75,7 +75,8 @@ class Agent:
     def _finish_status(plan):
         """Only report verified completion when the planner provides explicit evidence."""
         summary = plan.get('summary') or 'Task finished.'
-        if plan.get('verified') is True:
+        evidence = str(plan.get('verification_evidence') or '').strip()
+        if plan.get('verified') is True and evidence:
             return 'completed', summary
         return (
             'completed_unverified',
