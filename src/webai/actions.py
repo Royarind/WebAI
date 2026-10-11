@@ -247,17 +247,42 @@ def operate_control(page, by, value, operation, target=None, name=None, steps=1,
             raise ValueError("set_value requires a target value.")
         if meta["type"] == "range" or meta["role"] == "slider":
             locator.scroll_into_view_if_needed()
-            try:
-                locator.fill(str(target), timeout=timeout_ms)
-            except Exception:
-                locator.focus()
-                locator.press("Home" if float(target) <= float(meta.get("value") or 0) else "End")
-                locator.evaluate("(el, v) => { el.value = String(v); el.dispatchEvent(new Event('input', {bubbles:true})); el.dispatchEvent(new Event('change', {bubbles:true})); }", target)
+            box = locator.bounding_box()
+            if not box or box["width"] <= 0 or box["height"] <= 0:
+                raise LookupError("Slider has no visible bounding box.")
+            minimum = float(meta.get("min") or meta.get("ariaValueMin") or 0)
+            maximum = float(meta.get("max") or meta.get("ariaValueMax") or 100)
+            desired = float(target)
+            if maximum <= minimum or desired < minimum or desired > maximum:
+                raise ValueError(f"Slider target must be between {minimum:g} and {maximum:g}.")
+            # Use real Playwright mouse input rather than mutating the DOM value.
+            rtl = locator.evaluate("el => getComputedStyle(el).direction === 'rtl'")
+            ratio = (desired - minimum) / (maximum - minimum)
+            if rtl:
+                ratio = 1 - ratio
+            x = box["x"] + ratio * box["width"]
+            y = box["y"] + box["height"] / 2
+            page.mouse.move(box["x"] + box["width"] / 2, y)
+            page.mouse.down()
+            page.mouse.move(x, y, steps=12)
+            page.mouse.up()
             actual = locator.get_attribute("aria-valuenow") if meta["role"] == "slider" else locator.input_value()
             if actual is None:
                 actual = locator.evaluate("el => String(el.value)")
-            if str(actual) != str(target):
-                raise RuntimeError(f"Slider verification failed: expected {target!r}, got {actual!r}.")
+            if float(actual) != desired:
+                # Keyboard adjustment is a bounded fallback for browser/OS snapping.
+                locator.focus()
+                current = float(actual)
+                step = float(meta.get("step") or 1)
+                key = "ArrowRight" if desired > current else "ArrowLeft"
+                for _ in range(min(100, int(abs(desired-current) / step))):
+                    if current == desired:
+                        break
+                    locator.press(key, timeout=timeout_ms)
+                    actual = locator.get_attribute("aria-valuenow") if meta["role"] == "slider" else locator.input_value()
+                    current = float(actual or current)
+                if float(actual) != desired:
+                    raise RuntimeError(f"Slider verification failed: expected {target!r}, got {actual!r}.")
         else:
             locator.fill(str(target), timeout=timeout_ms)
             actual = locator.input_value(timeout=timeout_ms)
