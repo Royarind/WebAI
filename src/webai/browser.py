@@ -82,10 +82,35 @@ class WebAI:
         loc = make_locator(self.page, by, value, name)
         count = loc.count()
         if count == 0:
+            # A failed narrow selector should not prevent reading an article
+            # when the page exposes a recognizable main-content container.
+            # This fallback is read-only and is intentionally limited to common
+            # semantic/content roots; action locators remain strict.
+            for fallback_selector in ("main", "article", "#mw-content-text", "[role='main']"):
+                fallback = self.page.locator(fallback_selector)
+                fallback_count = fallback.count()
+                if not fallback_count:
+                    continue
+                for index in range(min(fallback_count, 2)):
+                    try:
+                        fallback_text = (
+                            fallback.nth(index).inner_text().strip()
+                            if fallback_count > 1 else fallback.inner_text().strip()
+                        )
+                    except Exception:
+                        continue
+                    if fallback_text:
+                        fallback_text = fallback_text[:max_chars]
+                        if len(fallback_text) == max_chars:
+                            fallback_text += "... [text truncated]"
+                        return (
+                            f"[Requested locator matched zero elements; using visible content "
+                            f"from fallback {fallback_selector!r}.]\\n\\n{fallback_text}"
+                        )
             raise LookupError(
                 f"No elements matched read_text locator (by={by!r}, value={value!r}) "
-                f"on page {self.page.title()!r} at {self.page.url!r}. "
-                "Inspect the live page and choose a locator supported by current evidence."
+                f"on page {self.page.title()!r} at {self.page.url!r}; no readable main-content "
+                "fallback was found. Inspect the live page and choose a locator supported by current evidence."
             )
 
         limit = min(count, max(1, int(max_matches)))
