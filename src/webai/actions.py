@@ -1,6 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
 from datetime import datetime
+import json
 from .locators import make_locator
 from .webai_dom_intelligence import DOMIntelligence
 
@@ -69,7 +70,7 @@ def _evidence(page, action: str, exc: Exception) -> dict:
             "screenshot": screenshot_path}
 
 
-def click(page, by, value, name=None, timeout_ms=8000):
+def click(page, by, value, name=None, timeout_ms=3000):
     try:
         locator, healed = _recover_locator(page, by, value, name, "click")
     except (LookupError, ValueError) as locator_error:
@@ -91,8 +92,39 @@ def click(page, by, value, name=None, timeout_ms=8000):
         }
     before_url = page.url
     try:
+        # Product pages often expose visually hidden checkbox/radio inputs while
+        # the associated label is the real user-facing target. Clicking the input
+        # directly can be intercepted by an adjacent option label.
+        input_meta = locator.evaluate("""el => ({
+            tag: el.tagName.toLowerCase(),
+            type: (el.getAttribute('type') || '').toLowerCase(),
+            id: el.id || '',
+            checked: !!el.checked,
+            disabled: !!el.disabled,
+            has_label: !!(el.labels && el.labels.length)
+        })""")
+        if input_meta["tag"] == "input" and input_meta["type"] in {"checkbox", "radio"} and input_meta["has_label"]:
+            if input_meta["disabled"]:
+                raise ValueError("Cannot click a disabled checkbox or radio input.")
+            if input_meta["checked"]:
+                return {"ok": True, "action": "click", "verified": True,
+                        "already_selected": True, "control_type": input_meta["type"],
+                        "locator": {"by": by, "value": value, "name": name}, "healed": healed}
+            label = page.locator("label[for=" + json.dumps(input_meta["id"]) + "]")
+            if label.count() == 1:
+                box = label.bounding_box()
+                if not box or box["width"] <= 0 or box["height"] <= 0:
+                    raise LookupError("Associated option label is not visible.")
+                label.click(timeout=timeout_ms, position={"x": min(5, max(1, box["width"] / 2)),
+                                                          "y": box["height"] / 2})
+                selected = locator.is_checked()
+                if not selected:
+                    raise RuntimeError("Option label was clicked, but the checkbox/radio state did not change.")
+                return {"ok": True, "action": "click", "verified": True,
+                        "control_type": input_meta["type"], "selected": True,
+                        "locator": {"by": by, "value": value, "name": name},
+                        "healed": healed, "url_before": before_url, "url_after": page.url}
         locator.click(timeout=timeout_ms)
-        page.wait_for_timeout(100)
         return {"ok": True, "action": "click", "locator": {"by": by, "value": value, "name": name},
                 "healed": healed, "url_before": before_url, "url_after": page.url,
                 "title_after": page.title(), "action_completed": True}

@@ -26,13 +26,18 @@ class Agent:
             elif self.browser.page: opened=self.browser.status()
             else: raise ValueError('Provide a URL or an existing browser session.')
             domain=urlparse(self.browser.page.url).netloc
-            obs={'task':task,'page':opened,'elements':self.browser.inspect(100),'recent_runs':self.memory.recent_runs(4),'domain_notes':self.memory.notes_for(domain,4)}
+            obs={'task':task,'page':opened,'elements':self.browser.inspect(60),'recent_runs':self.memory.recent_runs(4),'domain_notes':self.memory.notes_for(domain,4)}
             messages=[{'role':'user','content':json.dumps({'goal':task,'observation':obs},ensure_ascii=False)}]
             for i in range(self.settings.max_steps):
+                # Capturing full-page screenshots on every step is expensive and
+                # wasted when vision is disabled. Keep screenshots opt-in.
                 shot=None
-                try:
-                    shot=self.browser.screenshot(f'{self.settings.artifact_dir}/agent_step_{int(time.time())}_{i+1}.png'); artifacts.append(shot)
-                except Exception: pass
+                if self.settings.vision_enabled:
+                    try:
+                        shot=self.browser.screenshot(f'{self.settings.artifact_dir}/agent_step_{int(time.time())}_{i+1}.png')
+                        artifacts.append(shot)
+                    except Exception:
+                        pass
                 plan=self.llm.next_action(messages,shot)
                 trace.append({'step':i+1,'plan':plan})
                 kind=plan['action']
@@ -51,6 +56,10 @@ class Agent:
                 observation={'url':self.browser.page.url,'title':self.browser.page.title(),'result':result,'elements':self.browser.inspect(100)}
                 messages.append({'role':'assistant','content':json.dumps(plan,ensure_ascii=False)})
                 messages.append({'role':'user','content':json.dumps({'execution_result':result,'updated_observation':observation,'instruction':'Verify progress and select exactly one next action. Do not repeat a successful action unnecessarily.'},ensure_ascii=False)})
+                # Keep the original goal plus only the latest interaction context.
+                # Unbounded DOM snapshots inflate every OpenRouter request.
+                if len(messages) > 5:
+                    messages = [messages[0]] + messages[-4:]
                 if result.get('ok') is False:
                     messages.append({'role':'user','content':'The action did not verify. Reinspect and recover; do not blindly repeat.'})
             else:
