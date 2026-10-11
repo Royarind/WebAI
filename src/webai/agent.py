@@ -226,7 +226,7 @@ class Agent:
         finally:
             try: self.memory.add_run(task,status,summary,artifacts)
             except Exception: pass
-            if self._browser_owned and self.browser and status not in {'needs_input', 'needs_approval'}:
+            if self._browser_owned and self.browser and status not in {'needs_input', 'needs_approval', 'step_limit'}:
                 try: self.browser.close()
                 finally:
                     self.browser=None
