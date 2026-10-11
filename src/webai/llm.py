@@ -243,9 +243,13 @@ class LLMClient:
                 return self._parse_action(content)
             except (ValueError, json.JSONDecodeError) as exc:
                 if attempt == 2:
-                    raise ValueError(
-                        f"Model returned an invalid action after one correction attempt: {exc}"
-                    ) from exc
+                    # Avoid aborting a browser task on malformed model output.
+                    # Inspect the current page and let the next planner call recover.
+                    return {
+                        "action": "inspect",
+                        "reason": f"Planner output was invalid after two correction attempts: {exc}",
+                        "summary": "Re-inspecting the live page after invalid planner output.",
+                    }
                 msgs.append({"role": "assistant", "content": content})
                 msgs.append({
                     "role": "user",
@@ -261,4 +265,4 @@ class LLMClient:
                         "action, by, or value. Normalize by to exactly one lowercase value: role, label, placeholder, text, test_id, css, xpath. For Amazon search, use the exact visible search field label or placeholder, then click the unique Search button or use a supported action to submit. Ground the locator in the observation."
                     ),
                 })
-        raise ValueError("Model could not provide a valid action after two correction attempts.")
+        return {"action": "inspect", "reason": "Planner output was invalid; re-inspect the live page.", "summary": "Re-inspecting the live page after invalid planner output."}
