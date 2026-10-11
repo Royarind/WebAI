@@ -9,7 +9,7 @@ from .locators import overlay_inventory
 import re
 
 BLOCKED=('purchase','buy now','pay now','payment','delete','remove account','send email','send message','submit order','place order','transfer money','publish','confirm booking','finalize order')
-NEGATION = re.compile(r"\\b(?:do not|don't|dont|never|avoid|without|no need to|not to|not)\\b", re.I)
+NEGATION = re.compile(r"\b(?:do not|don't|dont|never|avoid|without|no need to|not to|not)\\b", re.I)
 
 def sensitive(text):
     low=text.lower()
@@ -21,7 +21,7 @@ def sensitive_task(text):
     Split at common clause boundaries so a negation in one clause does not
     accidentally authorize a separate consequential action in another.
     """
-    for clause in re.split(r"[.!?;,\\n]+", text, flags=re.M):
+    for clause in re.split(r"[.!?;,\n]+", text, flags=re.M):
         low = clause.lower()
         for phrase in BLOCKED:
             start = 0
