@@ -56,6 +56,10 @@ class Agent:
                 observation={'url':self.browser.page.url,'title':self.browser.page.title(),'result':result,'elements':self.browser.inspect(100)}
                 messages.append({'role':'assistant','content':json.dumps(plan,ensure_ascii=False)})
                 messages.append({'role':'user','content':json.dumps({'execution_result':result,'updated_observation':observation,'instruction':'Verify progress and select exactly one next action. Do not repeat a successful action unnecessarily.'},ensure_ascii=False)})
+                # Keep the original goal plus only the latest interaction context.
+                # Unbounded DOM snapshots inflate every OpenRouter request.
+                if len(messages) > 5:
+                    messages = [messages[0]] + messages[-4:]
                 if result.get('ok') is False:
                     messages.append({'role':'user','content':'The action did not verify. Reinspect and recover; do not blindly repeat.'})
             else:
