@@ -184,6 +184,13 @@ class LLMClient:
                     token = next((group for group in match.groups() if group), "")
                     by = token
                 by = by.strip().lower().strip(" .,:;!?\\t\\r\\n").replace("-", "_").replace(" ", "_")
+                # Recover common model truncations only when the supplied token is
+                # an unambiguous prefix of exactly one supported locator strategy.
+                if by not in {"role", "label", "placeholder", "text", "test_id", "css", "xpath"}:
+                    matches = [strategy for strategy in ("role", "label", "placeholder", "text", "test_id", "css", "xpath")
+                               if strategy.startswith(by) and len(by) >= 4]
+                    if len(matches) == 1:
+                        by = matches[0]
                 by = {"testid": "test_id", "data_test_id": "test_id", "accessible_name": "role", "css_selector": "css", "xpath_selector": "xpath"}.get(by, by)
                 # Some models misuse "value" as a locator strategy for a named input.
                 # For fill only, treat this as placeholder only when a non-empty field target exists.
@@ -251,7 +258,7 @@ class LLMClient:
             url = str(page.get("url", "")).lower()
             if not any(site in url for site in ("amazon.",)):
                 return None
-            match = re.search(r"\\bsearch\\s+(?:for\\s+)?(.+?)(?:\\.|$)", goal, re.I)
+            match = re.search(r"\bsearch\s+(?:for\s+)?(.+?)(?:\.|$)", goal, re.I)
             if not match:
                 return None
             query = match.group(1).strip().rstrip(".")
