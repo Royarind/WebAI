@@ -103,3 +103,19 @@ def test_hosted_provider_still_requires_api_key(monkeypatch):
 
     with pytest.raises(RuntimeError, match="WEBAI_LLM_API_KEY is empty"):
         LLMClient().next_action([{"role": "user", "content": "Inspect the page"}])
+
+
+
+@pytest.mark.parametrize(
+    "payload, message",
+    [
+        ({"action": {"nested": "dict"}}, "invalid action field"),
+        ({"action": "click", "by": {"nested": "dict"}, "value": "Search"}, "invalid locator strategy"),
+        ({"action": "click", "by": "role", "value": {"nested": "dict"}}, "invalid locator value"),
+    ],
+)
+def test_parse_action_reports_malformed_field_types(payload, message):
+    import json
+
+    with pytest.raises(ValueError, match=message):
+        LLMClient._parse_action(json.dumps(payload))
