@@ -80,6 +80,7 @@ def test_ollama_action_request_needs_no_api_key_or_authorization(monkeypatch):
     assert captured["url"] == "http://localhost:11434/v1/chat/completions"
     assert captured["json"]["model"] == "qwen3:4b"
     assert captured["timeout"] == (5, 90)
+    assert captured["json"]["response_format"] == {"type": "json_object"}
     assert "Authorization" not in captured["headers"]
 
 
@@ -141,3 +142,20 @@ def test_ollama_retries_invalid_locator_strategy_once(monkeypatch):
     assert action["by"] == "role"
     assert action["value"] == "textbox"
     assert "previous JSON action was rejected" in calls[1]["messages"][-1]["content"]
+
+
+def test_hosted_action_request_does_not_receive_ollama_json_mode(monkeypatch):
+    monkeypatch.setenv("WEBAI_LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("WEBAI_LLM_BASE_URL", "https://openrouter.ai/api/v1")
+    monkeypatch.setenv("WEBAI_LLM_API_KEY", "test-key")
+    captured = {}
+
+    def fake_post(url, **kwargs):
+        captured.update(kwargs)
+        return FakeResponse({"choices": [{"message": {"content": '{"action":"inspect"}'}}]})
+
+    monkeypatch.setattr("webai.llm.requests.post", fake_post)
+    action = LLMClient().next_action([{"role": "user", "content": "Inspect page"}])
+
+    assert action["action"] == "inspect"
+    assert "response_format" not in captured["json"]
