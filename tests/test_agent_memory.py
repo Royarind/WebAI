@@ -1,0 +1,19 @@
+from webai.agent import sensitive
+from webai.memory import Memory
+from webai.llm import SYSTEM
+
+def test_consequential_tasks_are_flagged():
+    assert sensitive('purchase this item')
+    assert sensitive('send email to a customer')
+    assert not sensitive('inspect the page')
+
+def test_memory_stores_runs_and_notes(tmp_path):
+    m=Memory(str(tmp_path/'memory.sqlite3'))
+    m.add_run('inspect page','completed','found controls')
+    assert m.recent_runs(1)[0]['task']=='inspect page'
+    m.add_note('example.com','invoice table',{'locator':'#invoices'})
+    assert m.notes_for('example.com')[0]['note']=='invoice table'
+
+def test_agent_prompt_has_constrained_actions():
+    assert 'Allowed actions' in SYSTEM
+    assert 'Never bypass CAPTCHA' in SYSTEM
