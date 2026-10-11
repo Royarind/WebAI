@@ -81,3 +81,29 @@ def test_agent_prompt_requires_observable_verification():
     assert "observable evidence" in SYSTEM
     assert "verified=true" in SYSTEM
     assert "verification_evidence" in SYSTEM
+
+
+def test_finish_uses_task_specific_verifier():
+    from webai.agent import Agent
+
+    class FakePage:
+        def evaluate(self, script, arg):
+            assert arg["kind"] == "selected_option"
+            return {"verified": arg["target"] == "Black", "evidence": ["Black"]}
+
+    status, _ = Agent._finish_status({
+        "action": "finish",
+        "summary": "Selected Black",
+        "verification_type": "selected_option",
+        "verification_target": "Black",
+    }, page=FakePage())
+    assert status == "completed"
+
+    status, summary = Agent._finish_status({
+        "action": "finish",
+        "summary": "Selected Citrine Forest Green",
+        "verification_type": "selected_option",
+        "verification_target": "Citrine Forest Green",
+    }, page=FakePage())
+    assert status == "completed_unverified"
+    assert "inconclusive" in summary.lower()
