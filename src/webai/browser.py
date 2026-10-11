@@ -72,13 +72,47 @@ class WebAI:
         self._ensure()
         return actions.screenshot(self.page, path)
 
-    def text(self, by, value, name=None):
+    def text(self, by, value, name=None, max_matches=5, max_chars=6000):
+        """Read one element or bounded text from multiple matches.
+
+        Reading is different from acting: multiple matches are useful for text
+        extraction, while click/fill/select still require an unambiguous target.
+        """
         self._ensure()
         loc = make_locator(self.page, by, value, name)
         count = loc.count()
-        if count != 1:
-            raise ValueError(f"Expected exactly one element, found {count}.")
-        return loc.inner_text()
+        if count == 0:
+            raise LookupError(
+                f"No elements matched read_text locator (by={by!r}, value={value!r}) "
+                f"on page {self.page.title()!r} at {self.page.url!r}. "
+                "Inspect the live page and choose a locator supported by current evidence."
+            )
+
+        limit = min(count, max(1, int(max_matches)))
+        chunks = []
+        for index in range(limit):
+            try:
+                text = loc.nth(index).inner_text().strip() if count > 1 else loc.inner_text().strip()
+            except Exception as exc:
+                # Preserve useful text from other matching elements when one
+                # detached or became unreadable during extraction.
+                chunks.append(f"[Match {index + 1}: {type(exc).__name__}: {exc}]")
+                continue
+            if text:
+                chunks.append(text)
+
+        if not chunks:
+            raise ValueError(
+                f"Locator matched {count} element(s), but none returned readable text. "
+                "Inspect the current page and try a visible text container."
+            )
+
+        result = "\\n\\n".join(chunks)
+        if count > limit:
+            result += f"\\n\\n[Showing {limit} of {count} matching elements.]"
+        if len(result) > max_chars:
+            result = result[:max_chars] + "... [text truncated]"
+        return result
 
     def status(self):
         self._ensure()
