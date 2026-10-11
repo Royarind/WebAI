@@ -12,7 +12,11 @@ class LLMClient:
 
     @property
     def provider_name(self):
-        return "Ollama" if self.settings.provider == "ollama" else self.settings.provider
+        if self.settings.provider == "ollama":
+            return "Ollama"
+        if self.settings.provider == "openrouter":
+            return "OpenRouter"
+        return self.settings.provider
 
     def _headers(self):
         headers = {"Content-Type": "application/json"}
