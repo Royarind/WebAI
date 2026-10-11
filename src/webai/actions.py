@@ -70,7 +70,25 @@ def _evidence(page, action: str, exc: Exception) -> dict:
 
 
 def click(page, by, value, name=None, timeout_ms=8000):
-    locator, healed = _recover_locator(page, by, value, name, "click")
+    try:
+        locator, healed = _recover_locator(page, by, value, name, "click")
+    except (LookupError, ValueError) as locator_error:
+        # Only resolve a better target when the original locator did not resolve
+        # uniquely. Never use DOM intelligence to retry after a click timeout,
+        # because the original click may already have taken effect.
+        if not name:
+            raise
+        from .sync_dom_intelligence import SyncDOMIntelligence
+        intent = str(name).strip()
+        if not intent:
+            raise locator_error
+        locator, diagnostics = SyncDOMIntelligence(page).resolve(intent)
+        healed = {
+            "from": {"by": by, "value": value, "name": name},
+            "to": {"strategy": "sync_dom_intelligence", "intent": intent},
+            "diagnostics": diagnostics,
+            "reason": str(locator_error),
+        }
     before_url = page.url
     try:
         locator.click(timeout=timeout_ms)
