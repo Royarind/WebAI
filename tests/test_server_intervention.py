@@ -19,6 +19,7 @@ def test_run_task_keeps_task_and_returns_intervention_state(monkeypatch):
     monkeypatch.setattr(server, "session_agent", fake)
     monkeypatch.setattr(server, "last_task", "")
     monkeypatch.setattr(server, "last_url", "")
+    monkeypatch.setattr(server, "last_result", None)
 
     result = server.run_task(server.RunRequest(
         url="https://www.google.com",
@@ -36,6 +37,7 @@ def test_resume_uses_current_page_without_reopening_original_url(monkeypatch):
     monkeypatch.setattr(server, "session_agent", fake)
     monkeypatch.setattr(server, "last_task", "Search for three Python web frameworks")
     monkeypatch.setattr(server, "last_url", "https://www.google.com")
+    monkeypatch.setattr(server, "last_result", {"status": "needs_input", "summary": "Paused"})
 
     result = server.resume_task()
 
