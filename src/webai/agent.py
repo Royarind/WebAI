@@ -366,6 +366,7 @@ class Agent:
         if kind=='fill': return self.browser.fill(plan['by'],plan['value'],plan['text'],plan.get('name'))
         if kind=='select': return self.browser.select(plan['by'],plan['value'],plan['option'],plan.get('name'))
         if kind=='check': return self.browser.check(plan['by'],plan['value'],plan.get('name'),bool(plan.get('checked',True)))
+        if kind=='control': return self.browser.control(plan['by'],plan['value'],plan['operation'],plan.get('target'),plan.get('name'),plan.get('steps',1))
         raise ValueError('Unsupported action: '+kind)
     def chat(self,url=None,persistent=True):
         # Keep the same browser across user prompts; each request gets a fresh bounded agent loop.
