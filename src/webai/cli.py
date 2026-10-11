@@ -21,9 +21,10 @@ def execute(web,plan):
 
 @app.command()
 def doctor():
-    """Show dependency and OpenRouter configuration status without revealing the key."""
+    """Show LLM provider configuration status without revealing secrets."""
     s=get_settings()
-    show({'llm_configured':bool(s.api_key),'base_url':s.base_url,'model':s.model,'vision_enabled':s.vision_enabled,'max_steps':s.max_steps,'memory_path':s.memory_path,'artifact_dir':s.artifact_dir})
+    configured = s.provider == 'ollama' or bool(s.api_key)
+    show({'llm_configured':configured,'provider':s.provider,'base_url':s.base_url,'model':s.model,'vision_enabled':s.vision_enabled,'max_steps':s.max_steps,'memory_path':s.memory_path,'artifact_dir':s.artifact_dir})
 
 @app.command()
 def open(url:str,headless:bool=typer.Option(False)):
@@ -59,7 +60,6 @@ def run(url:str=typer.Option(None,help='Optional starting URL; inferred from tas
 def agent(url:str=typer.Option(None,help='Optional initial URL'),persistent:bool=typer.Option(True),headless:bool=typer.Option(False)):
     """Start a natural-language interactive session using the configured LLM."""
     a=Agent()
-    # Override environment-derived default for this session if requested.
     if headless: a.settings.headless=True
     a.chat(url=url,persistent=persistent)
 
