@@ -158,7 +158,12 @@ def intervention_for_status(status, *, page=None, summary="", overlays=None):
             "user_action": "Review the proposed action and approve it explicitly before it is executed.",
         }
     if status == "step_limit":
-        return detect_intervention(page, overlays=overlays, reason=summary or "The agent reached its configured step limit.")
+        return {
+            "type": "agent_stuck", "title": "Agent reached its step limit",
+            "reason": str(summary or "The agent reached its configured step limit.")[:300],
+            "url": getattr(page, "url", None) if page is not None else None,
+            "user_action": "Review the current page and task, then resume or simplify the task. WebAI will not keep looping.",
+        }
     if status == "needs_input":
         return detect_intervention(page, overlays=overlays, reason=summary or "The agent needs clarification.")
     return None
