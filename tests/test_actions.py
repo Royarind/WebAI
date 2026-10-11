@@ -58,13 +58,13 @@ def test_click_uses_dom_intelligence_when_original_locator_is_missing():
         browser = p.chromium.launch()
         page = browser.new_page()
         page.set_content(
-            '<div><section><button aria-label="Target action" '
-            'onclick="this.textContent=\'Action completed\'">Run</button></section></div>'
+            '<div><section><div role="option" tabindex="0" aria-label="Target action" '
+            'onclick="this.textContent=\'Action completed\'">Run</div></section></div>'
         )
         result = click(page, "css", "#outdated-selector", "Target action")
         assert result["ok"] is True
         assert result["healed"]["to"]["strategy"] == "sync_dom_intelligence"
-        assert page.get_by_role("button", name="Target action").inner_text() == "Action completed"
+        assert page.get_by_role("option", name="Target action").inner_text() == "Action completed"
         browser.close()
 
 
@@ -75,7 +75,7 @@ def test_dom_intelligence_rejects_ambiguous_candidates():
         browser = p.chromium.launch()
         page = browser.new_page()
         page.set_content(
-            '<button aria-label="Target action">First</button>'
+            '<div role="option" tabindex="0" aria-label="Target action">First</div>'
             '<button aria-label="Target action">Second</button>'
         )
         import pytest
