@@ -25,7 +25,7 @@ class Agent:
                 self.browser.start()
             if url:
                 opened=self.browser.open(url)
-            elif self.browser.page:
+            elif not owns and self.browser.page:
                 opened=self.browser.status()
             else:
                 # Resolve the starting site only when no URL or open page exists.
