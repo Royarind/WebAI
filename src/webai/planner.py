@@ -1,6 +1,7 @@
-import json, os, re
+import json, re
 import requests
 from dotenv import load_dotenv
+from .config import get_settings
 
 ALLOWED = {"inspect", "click", "fill", "screenshot", "read_text", "status"}
 LOCATORS = {"role", "label", "placeholder", "text", "test_id", "css", "xpath"}
@@ -32,20 +33,42 @@ def rule_plan(task: str) -> dict:
 
 
 def llm_plan(task: str) -> dict:
-    """Optional OpenAI-compatible planner. Output is schema-validated."""
+    """Optional OpenAI-compatible planner, including local Ollama."""
     load_dotenv()
-    base = os.getenv("WEBAI_LLM_BASE_URL", "").rstrip("/")
-    model, key = os.getenv("WEBAI_LLM_MODEL", ""), os.getenv("WEBAI_LLM_API_KEY", "")
-    if not (base and model and key):
-        raise RuntimeError("Configure WEBAI_LLM_BASE_URL, WEBAI_LLM_MODEL and WEBAI_LLM_API_KEY in .env.")
-    system = ("Return one JSON object with action, by, value, name, text, path. Allowed actions: inspect, click, fill, screenshot, read_text, status. "
-              "Allowed locators: role, label, placeholder, text, test_id, css, xpath. Never plan purchases, payments, deletion, sending, publishing, or security bypass. JSON only.")
-    r = requests.post(f"{base}/chat/completions",
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        json={"model": model, "temperature": 0, "messages":[{"role":"system","content":system},{"role":"user","content":task}]},
-        timeout=float(os.getenv("WEBAI_LLM_TIMEOUT", "30")))
-    r.raise_for_status()
-    plan = json.loads(r.json()["choices"][0]["message"]["content"])
+    s = get_settings()
+    if s.provider != "ollama" and not s.api_key:
+        raise RuntimeError("WEBAI_LLM_API_KEY is empty; configure a key for the selected hosted LLM provider.")
+    headers = {"Content-Type": "application/json"}
+    if s.provider != "ollama":
+        headers["Authorization"] = "Bearer " + s.api_key
+    system = (
+        "Return one JSON object with action, by, value, name, text, path. Allowed actions: inspect, click, fill, screenshot, read_text, status. "
+        "Allowed locators: role, label, placeholder, text, test_id, css, xpath. Never plan purchases, payments, deletion, sending, publishing, or security bypass. JSON only."
+    )
+    try:
+        r = requests.post(
+            f"{s.base_url}/chat/completions",
+            headers=headers,
+            json={"model": s.model, "temperature": 0, "messages":[{"role":"system","content":system},{"role":"user","content":task}]},
+            timeout=s.timeout,
+        )
+    except requests.exceptions.ConnectionError as exc:
+        if s.provider == "ollama":
+            raise RuntimeError(f"Cannot connect to Ollama at {s.base_url}. Start Ollama and pull model '{s.model}'.") from exc
+        raise
+    if r.status_code >= 400:
+        raise RuntimeError(f"{'Ollama' if s.provider == 'ollama' else s.provider} HTTP {r.status_code}: {r.text[:1000]}")
+    payload = r.json()
+    try:
+        content = payload["choices"][0]["message"]["content"]
+        if isinstance(content, list):
+            content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+        stripped = content.strip()
+        if stripped.startswith("```"):
+            stripped = stripped.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        plan = json.loads(stripped)
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        raise ValueError(f"LLM returned an invalid planning response: {str(payload)[:800]}") from exc
     if not isinstance(plan, dict) or plan.get("action") not in ALLOWED:
         raise ValueError("LLM returned an unsupported action.")
     if plan["action"] in {"click", "fill", "read_text"}:
