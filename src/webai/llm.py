@@ -5,6 +5,44 @@ SYSTEM = '''You are the planning brain of a browser automation agent. The user g
 
 class LLMClient:
     def __init__(self): self.settings=get_settings()
+    def resolve_start_url(self, task):
+        """Infer a likely official starting URL from a natural-language task."""
+        s = self.settings
+        if not s.api_key:
+            raise RuntimeError('WEBAI_LLM_API_KEY is empty; configure OpenRouter in .env.')
+        system = (
+            'Resolve the starting website for a browser automation task. Return JSON only with one key: url. '
+            'Choose the official website that best matches the task, not an ad, affiliate, search result, or deep link. '
+            'Return the simplest reliable homepage URL using http or https. '
+            'If the task does not identify a website or service clearly enough, return {"url": null}. '
+        )
+        r = requests.post(
+            s.base_url + '/chat/completions',
+            headers={'Authorization': 'Bearer ' + s.api_key, 'Content-Type': 'application/json'},
+            json={'model': s.model, 'temperature': 0, 'messages': [
+                {'role': 'system', 'content': system}, {'role': 'user', 'content': task}
+            ]},
+            timeout=(5, min(s.timeout, 20)),
+        )
+        if r.status_code >= 400:
+            raise RuntimeError(f'OpenRouter URL-discovery HTTP {r.status_code}: {r.text[:500]}')
+        content = r.json()['choices'][0]['message']['content']
+        if isinstance(content, list):
+            content = ''.join(p.get('text', '') for p in content if isinstance(p, dict))
+        content = content.strip()
+        if content.startswith('```'):
+            content = content.split('\n', 1)[1].rsplit('```', 1)[0].strip()
+        obj = json.loads(content)
+        candidate = obj.get('url') if isinstance(obj, dict) else None
+        if not isinstance(candidate, str) or not candidate.strip():
+            raise ValueError('I could not determine the starting website. Enter a URL or name the website in your task.')
+        from urllib.parse import urlparse
+        candidate = candidate.strip()
+        parsed = urlparse(candidate)
+        if parsed.scheme not in {'http', 'https'} or not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError('Website discovery returned an invalid URL. Enter the website URL manually.')
+        return candidate
+
     def next_action(self, messages, screenshot_path=None):
         s=self.settings
         if not s.api_key: raise RuntimeError('WEBAI_LLM_API_KEY is empty; configure OpenRouter in .env.')
