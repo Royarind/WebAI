@@ -195,6 +195,25 @@ class Agent:
                 phase=time.perf_counter()
                 try:
                     plan=self.llm.next_action(messages,shot)
+                except RuntimeError as planning_error:
+                    timings['planning_seconds'].append(round(time.perf_counter()-phase,3))
+                    detail = str(planning_error)
+                    if 'in-flight request budget exhausted' in detail.lower() or 'in_flight_budget_exhausted' in detail.lower():
+                        summary = (
+                            'OpenRouter temporarily refused the request because its in-flight request budget is exhausted. '
+                            'No duplicate retry was started. Wait for the provider Retry-After interval (120 seconds in this report), '
+                            'then resume the existing browser session; check OpenRouter credits if this keeps happening.'
+                        )
+                        status = 'needs_input'
+                        intervention = {
+                            'type': 'provider_budget_exhausted',
+                            'title': 'OpenRouter request budget temporarily exhausted',
+                            'reason': summary,
+                            'url': self.browser.page.url,
+                            'user_action': 'Wait at least the Retry-After interval, then resume this task once. Do not launch duplicate runs.',
+                        }
+                        break
+                    raise
                 except (ValueError, json.JSONDecodeError) as planning_error:
                     timings['planning_seconds'].append(round(time.perf_counter()-phase,3))
                     summary=f'WebAI could not produce a valid next action after correction attempts: {planning_error}'
