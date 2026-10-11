@@ -68,6 +68,21 @@ class WebAI:
         self._ensure()
         return actions.check(self.page, by, value, name, checked)
 
+    def scroll(self, direction="down", amount=650):
+        """Scroll the current page by a bounded number of pixels."""
+        self._ensure()
+        direction = str(direction).strip().lower()
+        if direction not in {"up", "down"}:
+            raise ValueError("Scroll direction must be up or down.")
+        try:
+            amount = max(100, min(1400, int(amount)))
+        except (TypeError, ValueError):
+            amount = 650
+        delta = amount if direction == "down" else -amount
+        self.page.evaluate("(delta) => window.scrollBy(0, delta)", delta)
+        self.page.wait_for_timeout(250)
+        return {"ok": True, "direction": direction, "amount": amount, "url": self.page.url}
+
     def screenshot(self, path="artifacts/page.png"):
         self._ensure()
         return actions.screenshot(self.page, path)
