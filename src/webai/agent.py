@@ -41,10 +41,9 @@ class Agent:
     def __init__(self, browser=None, llm=None, memory=None):
         self.settings=get_settings(); self.browser=browser; self.llm=llm or LLMClient(); self.memory=memory or Memory(self.settings.memory_path)
     def run(self, task, url=None):
-        start=time.time(); perf_start=time.perf_counter(); artifacts=[]; trace=[]; status='failed'; summary=''; owns=False
+        start=time.time(); perf_start=time.perf_counter(); artifacts=[]; trace=[]; status='failed'; summary=''; owns=False; pending_action=None
         timings={'browser_start_seconds':0.0,'url_discovery_seconds':0.0,'navigation_seconds':0.0,'initial_observation_seconds':0.0,'planning_seconds':[],'action_seconds':[],'post_action_observation_seconds':[],'unattributed_seconds':0.0}
         try:
-            if sensitive_task(task): raise PermissionError('Blocked by default: the task appears to involve a consequential action. Use an explicitly reviewed workflow for this action.')
             owns=self.browser is None
             if owns:
                 phase=time.perf_counter()
@@ -90,10 +89,14 @@ class Agent:
                     break
                 if kind=='ask_user':
                     status='needs_input'; summary=plan.get('summary') or 'The agent needs clarification.'; break
-                if kind in {'click','fill','select','check'} and sensitive(str(plan.get('text',''))):
-                    raise PermissionError('Blocked a potentially consequential value.')
-                if kind in {'click','select','check'} and sensitive(str(plan.get('value',''))+' '+str(plan.get('name',''))):
-                    raise PermissionError('Blocked a control whose locator appears to describe a consequential action.')
+                # Consequential actions are not permanently blocked. Pause before
+                # execution and return the exact proposed action for explicit approval.
+                action_description = ' '.join(str(plan.get(key, '')) for key in ('text', 'value', 'name', 'option'))
+                if kind in {'click', 'fill', 'select', 'check'} and sensitive(action_description):
+                    status = 'needs_approval'
+                    summary = 'Approval required before this consequential action can execute.'
+                    pending_action = plan
+                    break
                 if kind=='navigate' and not plan.get('value','').startswith(('http://','https://')): raise ValueError('Navigation must use http(s).')
                 phase=time.perf_counter(); result=self._execute_action_with_recovery(plan)
                 timings['action_seconds'].append(round(time.perf_counter()-phase,3))
@@ -112,7 +115,7 @@ class Agent:
             else:
                 status='step_limit'; summary=f'Stopped at configured limit ({self.settings.max_steps} steps).'
             timings['unattributed_seconds']=round(max(0.0,time.perf_counter()-perf_start-timings['browser_start_seconds']-timings['url_discovery_seconds']-timings['navigation_seconds']-timings['initial_observation_seconds']-sum(timings['planning_seconds'])-sum(timings['action_seconds'])-sum(timings['post_action_observation_seconds'])),3)
-            report={'status':status,'summary':summary,'steps':trace,'artifacts':artifacts,'elapsed_seconds':round(time.time()-start,2),'url':self.browser.page.url if self.browser and self.browser.page else None,'timings_seconds':timings}
+            report={'status':status,'summary':summary,'steps':trace,'artifacts':artifacts,'elapsed_seconds':round(time.time()-start,2),'url':self.browser.page.url if self.browser and self.browser.page else None,'timings_seconds':timings,'pending_action':pending_action}
             if status=='completed': self.memory.add_note(domain,summary,{'task':task,'steps':len(trace)})
             return report
         except Exception as e:
