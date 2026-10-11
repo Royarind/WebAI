@@ -40,13 +40,13 @@ def sensitive_task(text):
 def _compact_elements(items, limit=24):
     """Keep actionable locator evidence while avoiding oversized DOM prompts."""
     fields = ("index", "tag", "type", "role", "name", "id", "testId",
-              "placeholder", "href", "disabled", "inShadowRoot", "page_index", "frame_index")
+              "placeholder", "href", "value", "checked", "disabled", "inShadowRoot", "page_index", "frame_index")
     compact = []
     for item in (items or [])[:limit]:
         if not isinstance(item, dict):
             continue
         entry = {key: item[key] for key in fields if key in item and item[key] not in ("", None)}
-        for key in ("name", "id", "testId", "placeholder", "href"):
+        for key in ("name", "id", "testId", "placeholder", "href", "value"):
             if isinstance(entry.get(key), str) and len(entry[key]) > 180:
                 entry[key] = entry[key][:177] + "..."
         compact.append(entry)
