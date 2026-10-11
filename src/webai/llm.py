@@ -37,7 +37,9 @@ class LLMClient:
                 s.base_url + "/chat/completions",
                 headers=self._headers(),
                 json=payload,
-                timeout=(5, min(s.timeout, 30)),
+                # Local CPU inference can take longer than hosted requests.
+                # Honor WEBAI_LLM_TIMEOUT for Ollama; keep the hosted-provider cap.
+                timeout=(5, s.timeout if s.provider == "ollama" else min(s.timeout, 30)),
             )
         except requests.exceptions.ConnectionError as exc:
             if s.provider == "ollama":
