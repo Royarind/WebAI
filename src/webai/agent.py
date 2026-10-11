@@ -26,13 +26,18 @@ class Agent:
             elif self.browser.page: opened=self.browser.status()
             else: raise ValueError('Provide a URL or an existing browser session.')
             domain=urlparse(self.browser.page.url).netloc
-            obs={'task':task,'page':opened,'elements':self.browser.inspect(100),'recent_runs':self.memory.recent_runs(4),'domain_notes':self.memory.notes_for(domain,4)}
+            obs={'task':task,'page':opened,'elements':self.browser.inspect(60),'recent_runs':self.memory.recent_runs(4),'domain_notes':self.memory.notes_for(domain,4)}
             messages=[{'role':'user','content':json.dumps({'goal':task,'observation':obs},ensure_ascii=False)}]
             for i in range(self.settings.max_steps):
+                # Capturing full-page screenshots on every step is expensive and
+                # wasted when vision is disabled. Keep screenshots opt-in.
                 shot=None
-                try:
-                    shot=self.browser.screenshot(f'{self.settings.artifact_dir}/agent_step_{int(time.time())}_{i+1}.png'); artifacts.append(shot)
-                except Exception: pass
+                if self.settings.vision_enabled:
+                    try:
+                        shot=self.browser.screenshot(f'{self.settings.artifact_dir}/agent_step_{int(time.time())}_{i+1}.png')
+                        artifacts.append(shot)
+                    except Exception:
+                        pass
                 plan=self.llm.next_action(messages,shot)
                 trace.append({'step':i+1,'plan':plan})
                 kind=plan['action']
