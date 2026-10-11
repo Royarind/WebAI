@@ -48,7 +48,10 @@ _INVENTORY_SCRIPT = r"""(limit) => {
     index: i, tag: el.tagName.toLowerCase(), type: el.getAttribute('type') || '',
     role: el.getAttribute('role') || '', name: label(el).slice(0, 160), id: el.id || '',
     testId: el.getAttribute('data-testid') || '', placeholder: el.getAttribute('placeholder') || '',
-    href: el.tagName === 'A' ? el.href : '', disabled: !!el.disabled,
+    href: el.tagName === 'A' ? el.href : '',
+    value: ('value' in el ? String(el.value || '') : '').slice(0, 180),
+    checked: ('checked' in el ? !!el.checked : undefined),
+    disabled: !!el.disabled,
     inShadowRoot: !!el.getRootNode().host
   }));
 }"""
