@@ -17,7 +17,7 @@ class LLMClient:
                 if isinstance(content,str):
                     last['content']=[{'type':'text','text':content},{'type':'image_url','image_url':{'url':'data:image/png;base64,'+encoded}}]
             except OSError: pass
-        r=requests.post(s.base_url+'/chat/completions',headers={'Authorization':'Bearer '+s.api_key,'Content-Type':'application/json'},json={'model':s.model,'temperature':0.1,'messages':msgs},timeout=s.timeout)
+        r=requests.post(s.base_url+'/chat/completions',headers={'Authorization':'Bearer '+s.api_key,'Content-Type':'application/json'},json={'model':s.model,'temperature':0.1,'messages':msgs},timeout=(5, min(s.timeout, 30)))
         if r.status_code>=400: raise RuntimeError(f'OpenRouter HTTP {r.status_code}: {r.text[:1000]}')
         content=r.json()['choices'][0]['message']['content']
         if isinstance(content,list): content=''.join(p.get('text','') for p in content if isinstance(p,dict))
