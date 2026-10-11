@@ -37,7 +37,8 @@ class Agent:
                 trace.append({'step':i+1,'plan':plan})
                 kind=plan['action']
                 if kind=='finish':
-                    status='completed'; summary=plan.get('summary') or 'Task completed.'; break
+                    status, summary = self._finish_status(plan)
+                    break
                 if kind=='ask_user':
                     status='needs_input'; summary=plan.get('summary') or 'The agent needs clarification.'; break
                 if kind in {'click','fill','select','check'} and sensitive(str(plan.get('text',''))):
@@ -70,6 +71,17 @@ class Agent:
             if owns and self.browser:
                 try: self.browser.close()
                 finally: self.browser=None
+    @staticmethod
+    def _finish_status(plan):
+        """Only report verified completion when the planner provides explicit evidence."""
+        summary = plan.get('summary') or 'Task finished.'
+        if plan.get('verified') is True:
+            return 'completed', summary
+        return (
+            'completed_unverified',
+            f'{summary} The agent did not provide explicit verification evidence, so completion remains unverified.'
+        )
+
     def _execute_action_with_recovery(self, plan):
         """Convert an individual browser-action exception into planner feedback.
 
