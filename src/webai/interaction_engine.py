@@ -108,7 +108,8 @@ class InteractionEngine:
             return {"ok": True, "action": action, "coordinates": {"x": sx, "y": sy},
                     "destination": ({"x": float(to_x), "y": float(to_y)} if action == "drag_at" else None),
                     "element_before": before, "element_after": after,
-                    "verified": bool(before), "verification_note": "Mouse event dispatched to the observed viewport coordinate; verify the resulting page state."}
+                    "action_dispatched": True, "verified": False,
+                    "verification_note": "Mouse event was dispatched to the observed viewport coordinate; inspect the resulting page state before claiming task completion."}
         if action == "click":
             dialog_policy = str(dialog_action or "dismiss").strip().lower()
             if dialog_policy not in {"dismiss", "accept"}:
@@ -161,10 +162,10 @@ class InteractionEngine:
                 verified = locator.evaluate("el => !!(el.matches(':hover') || el.contains(document.activeElement))")
             elif action == "double_click":
                 locator.dblclick(timeout=self.timeout_ms)
-                verified = True
+                verified = False
             elif action == "right_click":
                 locator.click(button="right", timeout=self.timeout_ms)
-                verified = True
+                verified = False
             elif action == "focus":
                 locator.focus(timeout=self.timeout_ms)
                 verified = locator.evaluate("el => document.activeElement === el")
@@ -184,7 +185,7 @@ class InteractionEngine:
                 if key not in allowed_keys and not (isinstance(key, str) and len(key) == 1):
                     raise ValueError(f"Unsupported key {key!r}.")
                 locator.press(key, timeout=self.timeout_ms)
-                verified = True
+                verified = False
             elif action == "upload":
                 if not path:
                     raise ValueError("upload requires path to an existing local file.")
@@ -251,6 +252,7 @@ class InteractionEngine:
                         "healed": {"source": healed, "destination": destination_healed},
                         "verification_note": "Position or parent changed." if moved else "Drag was dispatched, but a changed position/parent was not observed."}
             return {"ok": True, "action": action, "verified": bool(verified),
+                    "action_dispatched": action in {"double_click", "right_click", "press"},
                     "locator": {"by": by, "value": value, "name": name},
                     "healed": healed, "url_before": before_url, "url_after": self.page.url}
         if action == "download":
