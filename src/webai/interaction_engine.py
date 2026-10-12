@@ -121,12 +121,40 @@ class InteractionEngine:
                 if not target_by or not target_value:
                     raise ValueError("drag_drop requires target_by and target_value for the destination.")
                 destination, destination_healed = self.resolve(target_by, target_value, target_name, "drag_drop destination")
+                before = locator.evaluate("""el => {
+                  const path = [];
+                  let node = el;
+                  while (node && node.nodeType === 1) {
+                    let index = 0, sibling = node;
+                    while ((sibling = sibling.previousElementSibling)) index++;
+                    path.unshift(index); node = node.parentElement;
+                  }
+                  return {parent: el.parentElement ? el.parentElement.tagName + '#' + (el.parentElement.id || '') : '',
+                          path: path.join('/'), text: (el.innerText || '').slice(0,120)};
+                }""")
+                before_box = locator.bounding_box()
                 locator.drag_to(destination, timeout=self.timeout_ms)
-                verified = True
-                return {"ok": True, "action": action, "verified": verified,
+                after = locator.evaluate("""el => {
+                  const path = [];
+                  let node = el;
+                  while (node && node.nodeType === 1) {
+                    let index = 0, sibling = node;
+                    while ((sibling = sibling.previousElementSibling)) index++;
+                    path.unshift(index); node = node.parentElement;
+                  }
+                  return {parent: el.parentElement ? el.parentElement.tagName + '#' + (el.parentElement.id || '') : '',
+                          path: path.join('/'), text: (el.innerText || '').slice(0,120)};
+                }""")
+                after_box = locator.bounding_box()
+                moved = before["parent"] != after["parent"] or before["path"] != after["path"]
+                if before_box and after_box:
+                    moved = moved or abs(before_box["x"]-after_box["x"]) > 2 or abs(before_box["y"]-after_box["y"]) > 2
+                return {"ok": True, "action": action, "verified": bool(moved),
+                        "before": before, "after": after, "source_moved": bool(moved),
                         "source": {"by": by, "value": value, "name": name},
                         "destination": {"by": target_by, "value": target_value, "name": target_name},
-                        "healed": {"source": healed, "destination": destination_healed}}
+                        "healed": {"source": healed, "destination": destination_healed},
+                        "verification_note": "Position or parent changed." if moved else "Drag was dispatched, but a changed position/parent was not observed."}
             return {"ok": True, "action": action, "verified": bool(verified),
                     "locator": {"by": by, "value": value, "name": name},
                     "healed": healed, "url_before": before_url, "url_after": self.page.url}
