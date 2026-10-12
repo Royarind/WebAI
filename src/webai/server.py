@@ -82,16 +82,40 @@ function showResult(data){
      (iv.title||'WebAI needs you')+': '+(iv.reason||'Complete the required manual step')+' Current page: '+(data.url||'unknown')+'. '+(iv.user_action||'Complete the step in the visible browser, leave it open, then click Resume.');
  }
 }
+let eventPoller=null;
+let lastEventId=0;
+async function pollComputerEvents(){
+ try{
+   const r=await fetch('/api/events?after='+lastEventId);
+   const data=await r.json();
+   if(data.events&&data.events.length){
+     const live=document.querySelector('#live');
+     for(const ev of data.events){
+       lastEventId=Math.max(lastEventId,ev.id||0);
+       live.textContent += (live.textContent==='Waiting for computer-use activity…'?'':'\\n')+'['+new Date(ev.timestamp*1000).toLocaleTimeString()+'] '+(ev.message||ev.kind||'Computer event');
+     }
+     live.scrollTop=live.scrollHeight;
+   }
+ }catch(e){}
+}
 async function runTask(){
  const out=document.querySelector('#out');
  const task=document.querySelector('#task').value;
  out.textContent='Running...';
+ document.querySelector('#live').textContent='Starting task…';
+ lastEventId=0;
  document.querySelector('#intervention').classList.add('hidden');
+ if(eventPoller) clearInterval(eventPoller);
+ eventPoller=setInterval(pollComputerEvents,400);
  try{
    const r=await fetch('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},
      body:JSON.stringify({url:document.querySelector('#url').value,task})});
    const data=await r.json(); showResult(data);
  }catch(e){out.textContent=String(e)}
+ finally{
+   await pollComputerEvents();
+   if(eventPoller){clearInterval(eventPoller);eventPoller=null}
+ }
 }
 async function resumeTask(){
  const out=document.querySelector('#out'); out.textContent='Resuming on the current browser page...';
