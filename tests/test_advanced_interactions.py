@@ -122,3 +122,38 @@ def test_validate_form_reports_valid_state():
         assert result["valid"] is True
         assert result["invalid_fields"] == []
         browser.close()
+
+
+def test_set_date_custom_calendar_uses_unique_exact_date_cell():
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content("""
+          <button id="calendar" aria-label="Choose date" aria-expanded="false"
+            onclick="this.setAttribute('aria-expanded','true'); document.querySelector('#days').hidden=false">Choose date</button>
+          <div id="days" hidden>
+            <button role="gridcell" aria-label="2026-10-13" data-date="2026-10-13"
+              aria-selected="false" onclick="this.setAttribute('aria-selected','true'); document.querySelector('#calendar').textContent='2026-10-13'; document.querySelector('#calendar').setAttribute('aria-label','2026-10-13')">13</button>
+          </div>
+        """)
+        result = InteractionEngine(page).perform(
+            "set_date", by="role", value="button", name="Choose date", target="2026-10-13"
+        )
+        assert result["verified"] is True
+        assert page.get_by_role("gridcell", name="2026-10-13").get_attribute("aria-selected") == "true"
+        browser.close()
+
+
+def test_expand_supports_native_details_summary():
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content("""
+          <details id="faq"><summary>Shipping details</summary><p>Ships in two days</p></details>
+        """)
+        result = InteractionEngine(page).perform(
+            "expand", by="text", value="Shipping details"
+        )
+        assert result["verified"] is True
+        assert page.locator("#faq").evaluate("el => el.open") is True
+        browser.close()
