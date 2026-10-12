@@ -64,7 +64,7 @@ class InteractionEngine:
                 operation: str | None = None, target: Any = None,
                 steps: int = 1, path: str | None = None,
                 target_by: str | None = None, target_value: str | None = None,
-                target_name: str | None = None, key: str | None = None) -> dict:
+                target_name: str | None = None, key: str | None = None,\n                dialog_action: str | None = None, prompt_text: str | None = None) -> dict:
         """Execute a supported interaction and return verification evidence."""
         action = str(action or "").strip().lower()
         before_url = self.page.url
@@ -72,7 +72,36 @@ class InteractionEngine:
         if action == "observe":
             return {"ok": True, "action": "observe", "observation": self.observe()}
         if action == "click":
-            return actions.click(self.page, by, value, name, timeout_ms=self.timeout_ms)
+            dialog_policy = str(dialog_action or "dismiss").strip().lower()
+            if dialog_policy not in {"dismiss", "accept"}:
+                raise ValueError("dialog_action must be dismiss or accept.")
+            dialog_info = {}
+            def handle_dialog(dialog):
+                dialog_info.update({"type": dialog.type, "message": dialog.message,
+                                    "default_value": getattr(dialog, "default_value", "")})
+                # Confirm/prompt dialogs are accepted only when the planner has
+                # explicit user authorization. Otherwise dismiss conservatively.
+                if dialog_policy == "accept":
+                    if dialog.type == "prompt":
+                        dialog.accept(prompt_text or "")
+                    else:
+                        dialog.accept()
+                    dialog_info["decision"] = "accepted"
+                else:
+                    dialog.dismiss()
+                    dialog_info["decision"] = "dismissed"
+            self.page.on("dialog", handle_dialog)
+            try:
+                result = actions.click(self.page, by, value, name, timeout_ms=self.timeout_ms)
+            finally:
+                try:
+                    self.page.remove_listener("dialog", handle_dialog)
+                except Exception:
+                    pass
+            if dialog_info:
+                result["dialog"] = dialog_info
+                result["dialog_policy"] = dialog_policy
+            return result
         if action == "fill":
             return actions.fill(self.page, by, value, str(text or ""), name, timeout_ms=self.timeout_ms)
         if action == "select":
