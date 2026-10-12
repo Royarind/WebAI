@@ -26,7 +26,7 @@ pre{white-space:pre-wrap;background:#f4f4f4;padding:14px;border-radius:8px;overf
 .note{color:#555}.hidden{display:none}.intervention{background:#fff4d6;padding:12px;border-radius:8px}
 </style></head><body>
 <h1>WebAI Local</h1>
-<p class="note">The visible browser stays open when WebAI needs you to intervene. Only use sites and accounts you are authorized to access.</p>
+<p class="note">The visible WebAI browser stays open when WebAI needs you to intervene. Only use sites and accounts you are authorized to access.</p>
 <label>URL (optional)</label><input id="url" placeholder="Leave blank to let WebAI find the starting website">
 <label>Task in plain English</label><textarea id="task" rows="4" placeholder="Inspect the page and report available controls"></textarea>
 <button id="run" onclick="runTask()">Run task</button>
