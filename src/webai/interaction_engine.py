@@ -183,12 +183,12 @@ class InteractionEngine:
                 verified = False
             elif action == "focus":
                 locator.focus(timeout=self.timeout_ms)
-                verified = locator.evaluate("el => document.activeElement === el")
+                verified = locator.evaluate("el => document.activeElement === el || el.getRootNode().activeElement === el")
                 if not verified:
                     raise RuntimeError("Focus action completed but target did not become active.")
             elif action == "blur":
                 locator.evaluate("el => el.blur()")
-                verified = not locator.evaluate("el => document.activeElement === el")
+                verified = not locator.evaluate("el => document.activeElement === el || el.getRootNode().activeElement === el")
                 if not verified:
                     raise RuntimeError("Blur action completed but target retained focus.")
             elif action == "press":
@@ -292,7 +292,15 @@ class InteractionEngine:
             state = str(operation or "visible").lower()
             if state not in {"visible", "hidden", "attached", "detached"}:
                 raise ValueError("wait_for operation must be visible, hidden, attached, or detached.")
-            locator, healed = self.resolve(by, value, name, "wait_for")
+            try:
+                locator, healed = self.resolve(by, value, name, "wait_for")
+            except (LookupError, ValueError):
+                # For hidden/detached waits, absence is itself the expected state.
+                # Build the locator without requiring an existing visible match.
+                if state not in {"hidden", "detached"}:
+                    raise
+                locator = make_locator(self.page, by, value, name)
+                healed = None
             locator.wait_for(state=state, timeout=self.timeout_ms)
             return {"ok": True, "action": action, "state": state, "verified": True,
                     "locator": {"by": by, "value": value, "name": name}, "healed": healed}
