@@ -536,6 +536,11 @@ class Agent:
         if kind=='select': return self.browser.select(plan['by'],plan['value'],plan['option'],plan.get('name'))
         if kind=='check': return self.browser.check(plan['by'],plan['value'],plan.get('name'),bool(plan.get('checked',True)))
         if kind=='control': return self.browser.control(plan['by'],plan['value'],plan['operation'],plan.get('target'),plan.get('name'),plan.get('steps',1))
+        if kind in {'click_at', 'move_at', 'drag_at'}:
+            return self.browser.interact(
+                kind, x=plan.get('x'), y=plan.get('y'),
+                to_x=plan.get('to_x'), to_y=plan.get('to_y')
+            )
         if kind in {'hover', 'double_click', 'right_click', 'focus', 'blur', 'press', 'upload', 'drag_drop', 'wait_for'}:
             return self.browser.interact(
                 kind, by=plan.get('by', 'role'), value=plan.get('value', ''),
