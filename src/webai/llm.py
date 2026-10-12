@@ -179,7 +179,7 @@ class LLMClient:
                 # or "locator strategy: placeholder", but only canonicalize a
                 # recognized strategy token.
                 import re
-                match = re.search(r"(?:get[_]?by[_]?(role|label|placeholder|text|test[_]?id)|\\b(role|label|placeholder|text|test[_]?id|css|xpath)\\b)", raw_by)
+                match = re.search(r"(?:get[_]?by[_]?(role|label|placeholder|text|test[_]?id)|\b(role|label|placeholder|text|test[_]?id|css|xpath)\b)", raw_by)
                 if match:
                     token = next((group for group in match.groups() if group), "")
                     by = token
