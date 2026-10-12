@@ -537,6 +537,8 @@ class Agent:
         if kind=='check': return self.browser.check(plan['by'],plan['value'],plan.get('name'),bool(plan.get('checked',True)))
         if kind=='control': return self.browser.control(plan['by'],plan['value'],plan['operation'],plan.get('target'),plan.get('name'),plan.get('steps',1))
         if kind in {'click_at', 'move_at', 'drag_at'}:
+            if not getattr(self.settings, 'vision_enabled', False):
+                raise ValueError("Coordinate actions require WEBAI_VISION_ENABLED=true so coordinates can be grounded in a current viewport screenshot.")
             return self.browser.interact(
                 kind, x=plan.get('x'), y=plan.get('y'),
                 to_x=plan.get('to_x'), to_y=plan.get('to_y')
