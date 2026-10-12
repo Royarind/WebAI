@@ -108,25 +108,26 @@ def _recover_locator(page, by, value, name, action):
                                                 "context": context_index})
             except Exception:
                 continue
-        try:
-            candidate = context.get_by_text(name, exact=True)
-            count = candidate.count()
-            if count == 1 and candidate.is_visible():
-                key = f"{context_index}:" + candidate.evaluate("""el => {
-                    const parts = [];
-                    while (el && el.nodeType === 1) {
-                      let index = 0, sibling = el;
-                      while ((sibling = sibling.previousElementSibling)) index++;
-                      parts.unshift(index);
-                      el = el.parentElement;
-                    }
-                    return parts.join('/');
-                }""")
-                candidates[key] = (candidate, {"strategy": "exact_text", "context": context_index})
-            elif count:
-                diagnostics.append({"strategy": "exact_text", "matches": count, "context": context_index})
-        except Exception:
-            pass
+        if not candidates:
+            try:
+                candidate = context.get_by_text(name, exact=True)
+                count = candidate.count()
+                if count == 1 and candidate.is_visible():
+                    key = f"{context_index}:" + candidate.evaluate("""el => {
+                        const parts = [];
+                        while (el && el.nodeType === 1) {
+                          let index = 0, sibling = el;
+                          while ((sibling = sibling.previousElementSibling)) index++;
+                          parts.unshift(index);
+                          el = el.parentElement;
+                        }
+                        return parts.join('/');
+                    }""")
+                    candidates[key] = (candidate, {"strategy": "exact_text", "context": context_index})
+                elif count:
+                    diagnostics.append({"strategy": "exact_text", "matches": count, "context": context_index})
+            except Exception:
+                pass
     if len(candidates) == 1:
         candidate, strategy = next(iter(candidates.values()))
         return candidate, {"from": {"by": by, "value": value, "name": name},
