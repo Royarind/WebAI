@@ -309,6 +309,25 @@ class Agent:
                         },ensure_ascii=False)})
                         continue
                 signature = json.dumps({key: plan.get(key) for key in ('action','by','value','name','text','option','checked')}, sort_keys=True, ensure_ascii=False)
+                # Guard against the observed failure mode: repeatedly reading the same
+                # page or navigating back and forth without collecting new evidence.
+                if kind == 'read_text' and progress.repeated_read(plan, self.browser.page.url):
+                    messages.append({'role':'user','content':json.dumps({
+                        'instruction':'LOOP GUARD: this exact read_text locator has already produced evidence on this URL. Do not execute it again. Use the existing evidence_ledger, choose a different official source or a different locator that answers a missing objective, or finish if the requirements are already satisfied.',
+                        'task_progress':progress.snapshot(),
+                        'blocked_action':plan,
+                    },ensure_ascii=False)})
+                    continue
+                if kind == 'navigate':
+                    target_url = str(plan.get('value', ''))
+                    current_url = str(self.browser.page.url)
+                    if target_url.rstrip('/') == current_url.rstrip('/'):
+                        messages.append({'role':'user','content':json.dumps({
+                            'instruction':'LOOP GUARD: this navigation targets the current URL and will not advance the task. Do not repeat it; use current-page evidence or choose another source.',
+                            'task_progress':progress.snapshot(),
+                            'blocked_action':plan,
+                        },ensure_ascii=False)})
+                        continue
                 if kind=='finish':
                     status, summary = self._finish_status(plan, page=self.browser.page)
                     break
