@@ -122,3 +122,51 @@ Example planner action for a quantity button:
 ```
 
 Control actions require a unique visible target and verify the resulting state. If the page uses a custom canvas slider or an unlabeled +/- button that cannot be identified reliably, WebAI reports the failure rather than claiming success.
+
+
+## Cross-application retrieval (initial connectors)
+
+WebAI can run read-only local-file and Outlook retrieval tasks without opening an unrelated website. The LLM/browser workflow can also select these tools during a broader browser task.
+
+### Local files
+
+Set `WEBAI_FILE_ROOTS` to folders WebAI is allowed to search. Only these roots are accessible; file access is read-only.
+
+PowerShell example:
+
+```powershell
+$env:WEBAI_FILE_ROOTS = "D:\\Work;D:\\Documents"
+python -m webai
+```
+
+Supported text formats: TXT, Markdown, RST, LOG, JSON, CSV, YAML, XML and HTML. Hidden/system folders such as `.git`, virtual environments, `node_modules`, Windows and Program Files are skipped. Large files are skipped or truncated. File paths outside the configured roots are rejected.
+
+Example tasks:
+- `Search my local files for the Leon release plan`
+- `Find documents on my computer about delivery governance`
+- `Read file "D:\\Work\\notes.md"`
+
+### Outlook email retrieval
+
+The Outlook connector uses Microsoft Graph and is read-only. Configure `WEBAI_OUTLOOK_ACCESS_TOKEN` with a valid Microsoft Graph access token that has delegated `Mail.Read` permission and appropriate consent. WebAI does not ask for or store your Microsoft password and does not send messages.
+
+PowerShell example:
+
+```powershell
+$env:WEBAI_OUTLOOK_ACCESS_TOKEN = "<short-lived Microsoft Graph access token>"
+python -m webai
+```
+
+Example tasks:
+- `Summarize my Outlook inbox` (returns the latest message subjects, senders, timestamps and previews for review)
+- `Find Outlook emails about the Leon release`
+- `Find unread Outlook emails about budget`
+
+Tokens expire; refresh the token through your approved Microsoft identity flow when Graph returns 401. Do not paste tokens into chat, commit them, or place them in source files. For a durable deployment, use MSAL interactive/device-code authentication and an OS credential store rather than manually setting a token.
+
+### Current integration boundaries
+
+- Local files: read/search supported text formats within explicit roots; no writes or deletion.
+- Outlook: recent-message listing and message search via Microsoft Graph; no sending, moving, deleting, or calendar writes.
+- WhatsApp: can be approached through the existing visible browser workflow when WhatsApp Web is already authorized, but there is not yet a dedicated WhatsApp API connector.
+- Native Windows desktop control and Office document creation are not yet implemented as dedicated connectors.
