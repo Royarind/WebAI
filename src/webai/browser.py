@@ -165,6 +165,20 @@ class WebAI:
                 }""")
                 text = str(meta.get("value") or "").strip()
             except Exception as exc:
+                # Lightweight locator adapters may expose inner_text() but not
+                # Playwright's evaluate(). Fall back to visible text in that case;
+                # do not retry arbitrary browser errors or repeat an action.
+                if isinstance(exc, AttributeError) and "evaluate" in str(exc):
+                    try:
+                        fallback_text = str(element.inner_text() or "").strip()
+                    except Exception as fallback_exc:
+                        chunks.append(
+                            f"[Match {index + 1}: {type(fallback_exc).__name__}: {fallback_exc}]"
+                        )
+                        continue
+                    if fallback_text:
+                        chunks.append(fallback_text)
+                    continue
                 # Preserve useful text from other matching elements when one
                 # detached or became unreadable during extraction.
                 chunks.append(f"[Match {index + 1}: {type(exc).__name__}: {exc}]")
