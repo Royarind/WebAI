@@ -115,3 +115,18 @@ def test_click_already_selected_radio_does_not_click_again():
         assert result["already_selected"] is True
         assert page.locator("#fit").is_checked()
         browser.close()
+
+
+
+def test_locator_is_ambiguous_when_same_named_control_exists_in_page_and_iframe():
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content("""
+          <button aria-label="Continue">Continue</button>
+          <iframe srcdoc="<button aria-label='Continue'>Continue</button>"></iframe>
+        """)
+        import pytest
+        with pytest.raises(ValueError, match="ambiguous across the main page and frames"):
+            click(page, "role", "button", "Continue")
+        browser.close()
