@@ -70,6 +70,29 @@ class ComputerUse:
             path = Path.cwd() / path
         return path.resolve(strict=not allow_missing)
 
+    def live_search_in_explorer(self, query: str) -> dict[str, Any]:
+        """Visibly open Windows Explorer and initiate a This PC search."""
+        if platform.system() != "Windows":
+            return {"ok": False, "available": False, "reason": "Live Explorer interaction is Windows-only; filesystem search remains available."}
+        gui = self._gui()
+        query = str(query or "").strip()
+        if not query or len(query) > 160:
+            raise ValueError("Search query must contain 1–160 characters.")
+        self._event("computer_step", message="Opening Windows File Explorer", action="open_explorer")
+        gui.hotkey("win", "e")
+        time.sleep(1.2)
+        self._event("computer_step", message="Navigating Explorer to This PC", action="navigate_this_pc")
+        gui.hotkey("ctrl", "l")
+        gui.write("This PC", interval=0.06)
+        gui.press("enter")
+        time.sleep(1.4)
+        self._event("computer_step", message=f"Searching This PC for: {query}", action="search_this_pc", query=query)
+        gui.hotkey("ctrl", "e")
+        gui.write(query, interval=0.04)
+        gui.press("enter")
+        time.sleep(1.0)
+        self._event("computer_step", message="Search submitted in visible File Explorer", action="search_submitted", query=query)
+        return {"ok": True, "available": True, "visible": True, "query": query, "note": "Explorer search was initiated; results should be visually checked in the open Explorer window."}
     def search(self, query: str, *, limit: int = 30) -> dict[str, Any]:
         query = str(query or "").strip().lower()
         if not query:
