@@ -634,7 +634,7 @@ class Agent:
         self.outlook = OutlookGraphConnector(timeout=self.settings.timeout)
         results = {}
         if local_requested:
-                path_match = re.search(r"""([A-Za-z]:\\[^"\r\n]*?\.[A-Za-z0-9]{1,10})""", text)
+            path_match = re.search(r"""([A-Za-z]:\\[^"\r\n]*?\.[A-Za-z0-9]{1,10})""", task)
             if not self.local_files.available:
                 results["local_files"] = {"ok": False, "error": "Local file search is not configured. Set WEBAI_FILE_ROOTS to permitted folders, separated by semicolons on Windows."}
             elif path_match:
