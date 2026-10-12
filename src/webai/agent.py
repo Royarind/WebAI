@@ -119,6 +119,62 @@ def _compact_overlays(overlays, limit=3):
     return compact
 
 
+class TaskProgress:
+    """Small deterministic progress ledger for multi-step browser tasks."""
+    def __init__(self, goal):
+        self.goal = str(goal or "").strip()
+        self.visited_urls = []
+        self.evidence = []
+        self.successful_actions = []
+        self.completed_objectives = []
+        self._seen_reads = set()
+        self._seen_actions = set()
+
+    def record_navigation(self, url):
+        url = str(url or "")
+        if url and (not self.visited_urls or self.visited_urls[-1] != url):
+            self.visited_urls.append(url)
+            self.visited_urls = self.visited_urls[-12:]
+
+    def record_action(self, plan, result, url):
+        signature = json.dumps({
+            key: plan.get(key) for key in
+            ("action", "by", "value", "name", "text", "option", "checked", "operation", "target")
+        }, sort_keys=True, ensure_ascii=False)
+        repeated = signature in self._seen_actions
+        if result.get("ok") is not False:
+            self._seen_actions.add(signature)
+            self.successful_actions.append(signature)
+            self.successful_actions = self.successful_actions[-16:]
+            self.record_navigation(url)
+            if plan.get("action") == "read_text" and str(result.get("text", "")).strip():
+                read_key = (str(url), str(plan.get("by")), str(plan.get("value")))
+                if read_key not in self._seen_reads:
+                    self._seen_reads.add(read_key)
+                    self.evidence.append({
+                        "url": str(url),
+                        "locator": {"by": plan.get("by"), "value": plan.get("value")},
+                        "text": str(result["text"])[:2200],
+                    })
+                    self.evidence = self.evidence[-8:]
+        return repeated
+
+    def snapshot(self):
+        return {
+            "original_goal": self.goal,
+            "visited_pages": list(self.visited_urls),
+            "evidence_ledger": list(self.evidence),
+            "successful_action_signatures": list(self.successful_actions),
+            "completed_objectives": list(self.completed_objectives),
+        }
+
+    def repeated_read(self, plan, url):
+        if plan.get("action") != "read_text":
+            return False
+        key = (str(url), str(plan.get("by")), str(plan.get("value")))
+        return key in self._seen_reads
+
+
 def _normalize_navigation_url(value):
     """Strip common Markdown link wrappers from model-generated navigation URLs."""
     raw = str(value or "").strip()
@@ -197,9 +253,8 @@ class Agent:
                 intervention=None
             messages=[{'role':'user','content':json.dumps({'goal':task,'observation':obs},ensure_ascii=False)}]
             failed_action_signatures = {}
-            visited_pages = []
-            evidence_ledger = []
-            successful_action_signatures = set()
+            progress = TaskProgress(task)
+            progress.record_navigation(self.browser.page.url)
             if intervention:
                 status='needs_input'; summary=intervention.get('reason', 'Human intervention is required.')
             for i in range(0 if intervention else self.settings.max_steps):
@@ -250,7 +305,7 @@ class Agent:
                         messages.append({'role':'user','content':json.dumps({
                             'instruction':'The proposed navigation URL was invalid. Do not repeat it. Choose a clean, absolute http(s) URL grounded in the task or current page evidence, or ask the user.',
                             'invalid_url':str(invalid_url),
-                            'visited_pages':visited_pages[-8:],
+                            'visited_pages':progress.visited_urls[-8:],
                         },ensure_ascii=False)})
                         continue
                 signature = json.dumps({key: plan.get(key) for key in ('action','by','value','name','text','option','checked')}, sort_keys=True, ensure_ascii=False)
@@ -289,17 +344,7 @@ class Agent:
                     failed_action_signatures.pop(signature, None)
                 if kind=='screenshot' and result.get('path'): artifacts.append(result['path'])
                 if result.get('ok') is not False:
-                    successful_action_signatures.add(signature)
-                    current_url = str(self.browser.page.url)
-                    if current_url and (not visited_pages or visited_pages[-1] != current_url):
-                        visited_pages.append(current_url)
-                    if kind == 'read_text' and isinstance(result.get('text'), str) and result['text'].strip():
-                        evidence_ledger.append({
-                            'url': current_url,
-                            'locator': {'by': plan.get('by'), 'value': plan.get('value')},
-                            'text': result['text'][:2200],
-                        })
-                        evidence_ledger = evidence_ledger[-6:]
+                    progress.record_action(plan, result, self.browser.page.url)
                 post_profile_filled=autofill_known_profile(self.browser.page)
                 phase=time.perf_counter()
                 compact_result=_compact_result(result)
@@ -321,12 +366,7 @@ class Agent:
                 messages.append({'role':'user','content':json.dumps({
                     'execution_result':compact_result,
                     'updated_observation':observation,
-                    'task_progress':{
-                        'original_goal':task,
-                        'visited_pages':visited_pages[-8:],
-                        'evidence_ledger':evidence_ledger,
-                        'successful_action_signatures':list(successful_action_signatures)[-12:],
-                    },
+                    'task_progress':progress.snapshot(),
                     'instruction':(
                         'Update the task plan mentally against the original goal. Preserve extracted facts in the evidence ledger. '
                         'Do not revisit a URL or repeat a successful action unless you state a specific missing fact that requires it. '
