@@ -22,7 +22,7 @@ def locate(page, by, value, name=None):
         main_count = main.count()
     except Exception as exc:
         raise ValueError(
-            f"Invalid {by!r} locator for {action if (action := 'interaction') else 'interaction'} target {value!r}: {exc}"
+            f"Invalid {by!r} locator for target {value!r}: {exc}"
         ) from exc
     frame_matches = []
     frame_diagnostics = []
