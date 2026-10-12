@@ -85,9 +85,7 @@ def assess_intent(goal: str, *, available_capabilities: list[str] | None = None)
     if not objectives and original:
         objectives = [{"id": "obj_1", "description": original, "status": "pending", "completion_evidence_required": True}]
 
-    capabilities = list(dict.fromkeys(available_capabilities or [
-        "browser", "desktop", "email", "messaging", "local_files", "office_documents", "calendar"
-    ]))
+    capabilities = list(dict.fromkeys(available_capabilities or ["browser"]))
     unavailable = [domain for domain in domains if domain not in capabilities and not (
         domain == "files" and "local_files" in capabilities
     )]
