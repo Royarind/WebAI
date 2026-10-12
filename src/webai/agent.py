@@ -231,8 +231,15 @@ class Agent:
                 query = match.group(1).strip(" .!?") if match else ""
                 if not query:
                     return None
+                self.computer._event("computer_step", message="Starting live computer-use search", action="search_start", query=query)
+                try:
+                    live_ui = self.computer.live_search_in_explorer(query)
+                except Exception as desktop_error:
+                    live_ui = {"ok": False, "available": False, "reason": f"{type(desktop_error).__name__}: {desktop_error}"}
+                    self.computer._event("computer_step", message=f"Live desktop interaction unavailable: {desktop_error}", action="desktop_unavailable")
                 data = self.computer.search(query)
-                summary = f"Filesystem search completed: {data.get('count', 0)} result(s)."
+                data["live_desktop"] = live_ui
+                summary = f"Filesystem search completed: {data.get('count', 0)} result(s). Live Explorer interaction: {'initiated' if live_ui.get('ok') else 'unavailable'}."
             else:
                 return None
             return {"status": "completed", "summary": summary, "steps": [{"step": 1, "plan": {"action": "computer_use"}, "result": data}], "data": {"computer": data}, "artifacts": [], "elapsed_seconds": 0, "url": None, "intervention": None}
