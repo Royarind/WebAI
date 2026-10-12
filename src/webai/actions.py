@@ -17,8 +17,13 @@ def _one(locator, action: str):
 
 def locate(page, by, value, name=None):
     """Find a unique match across the main page and all accessible child frames."""
-    main = make_locator(page, by, value, name)
-    main_count = main.count()
+    try:
+        main = make_locator(page, by, value, name)
+        main_count = main.count()
+    except Exception as exc:
+        raise ValueError(
+            f"Invalid {by!r} locator for {action if (action := 'interaction') else 'interaction'} target {value!r}: {exc}"
+        ) from exc
     frame_matches = []
     frame_diagnostics = []
     for frame in page.frames:
