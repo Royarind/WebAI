@@ -234,12 +234,26 @@ def fill(page, by, value, text, name=None, timeout_ms=8000):
 
 
 def select_option(page, by, value, option, name=None):
+    """Select a native option or route a custom selector through control handling."""
     locator, healed = _recover_locator(page, by, value, name, "select")
+    tag = locator.evaluate("el => el.tagName.toLowerCase()")
+    if tag != "select":
+        result = operate_control(page, by, value, "choose", option, name)
+        result["action"] = "select"
+        result["selection_strategy"] = "custom_control"
+        return result
     locator.select_option(option, timeout=8000)
-    selected = locator.input_value()
-    if selected != option:
-        raise RuntimeError(f"Select verification failed: expected {option!r}, got {selected!r}.")
-    return {"ok": True, "action": "select", "option": option, "healed": healed, "verified": True}
+    selected_values = locator.locator("option:checked").evaluate_all("els => els.map(el => el.value)")
+    selected_labels = locator.locator("option:checked").evaluate_all("els => els.map(el => (el.label || el.textContent || '').trim())")
+    requested = option if isinstance(option, list) else [option]
+    verified = all(str(item) in selected_values or str(item) in selected_labels for item in requested)
+    if not verified:
+        raise RuntimeError(
+            f"Select verification failed: expected {option!r}, got values={selected_values!r}, labels={selected_labels!r}."
+        )
+    return {"ok": True, "action": "select", "option": option,
+            "selected_values": selected_values, "selected_labels": selected_labels,
+            "healed": healed, "verified": True}
 
 
 def check(page, by, value, name=None, checked=True):
