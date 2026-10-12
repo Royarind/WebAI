@@ -8,6 +8,7 @@ from .locators import overlay_inventory
 from .interventions import detect_intervention, intervention_for_status
 from .profile import autofill_known_profile
 from .task_planning import TaskPlan, EvidenceStore, verify_deliverable
+from .intent_engine import assess_intent, next_step_guidance
 
 import re
 
@@ -257,8 +258,9 @@ class Agent:
             progress = TaskProgress(task)
             task_plan = TaskPlan(task)
             evidence_store = EvidenceStore()
+            intent_model = assess_intent(task)
             progress.record_navigation(self.browser.page.url)
-            messages=[{'role':'user','content':json.dumps({'goal':task,'task_plan':task_plan.snapshot(),'evidence_store':evidence_store.snapshot(),'observation':obs},ensure_ascii=False)}]
+            messages=[{'role':'user','content':json.dumps({'goal':task,'intent_model':intent_model,'next_step_guidance':next_step_guidance(intent_model, observation={'url':self.browser.page.url, 'title':self.browser.page.title()}),'task_plan':task_plan.snapshot(),'evidence_store':evidence_store.snapshot(),'observation':obs},ensure_ascii=False)}]
             failed_action_signatures = {}
             if intervention:
                 status='needs_input'; summary=intervention.get('reason', 'Human intervention is required.')
@@ -412,6 +414,13 @@ class Agent:
                     'execution_result':compact_result,
                     'updated_observation':observation,
                     'task_progress':progress.snapshot(),
+                    'intent_model':intent_model,
+                    'next_step_guidance':next_step_guidance(
+                        intent_model,
+                        observation={'url':self.browser.page.url, 'title':self.browser.page.title(), 'elements':observation.get('elements', [])},
+                        progress=progress.snapshot(),
+                        last_result=compact_result,
+                    ),
                     'instruction':(
                         'Update the task plan mentally against the original goal. Preserve extracted facts in the evidence ledger. '
                         'Do not revisit a URL or repeat a successful action unless you state a specific missing fact that requires it. '
