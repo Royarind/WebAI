@@ -316,3 +316,38 @@ def test_wait_for_hidden_and_detached_states_does_not_require_visible_match():
         assert hidden["verified"] is True
         assert detached["verified"] is True
         browser.close()
+
+
+
+def test_observation_redacts_password_values_but_keeps_non_sensitive_form_state():
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content("""
+          <label for="password">Password</label><input id="password" type="password" value="secret-value">
+          <label for="query">Search</label><input id="query" value="wireless mouse">
+          <label for="size">Size</label><select id="size"><option value="s">Small</option><option value="m" selected>Medium</option></select>
+        """)
+        observation = InteractionEngine(page).observe()
+        controls = {item.get("name"): item for item in observation["controls"]}
+        assert controls["Password"]["value"] == "[redacted]"
+        assert controls["Search"]["value"] == "wireless mouse"
+        assert controls["Size"]["selectedOptions"] == ["Medium"]
+        browser.close()
+
+
+def test_read_text_returns_form_values_but_redacts_passwords():
+    from webai.browser import WebAI
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content("""
+          <input id="password" type="password" value="secret-value">
+          <input id="query" value="wireless mouse">
+        """)
+        toolkit = WebAI(headless=True)
+        toolkit.page = page
+        assert toolkit.text("css", "#password") == "[redacted sensitive field]"
+        assert toolkit.text("css", "#query") == "wireless mouse"
+        browser.close()
