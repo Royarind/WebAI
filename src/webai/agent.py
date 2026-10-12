@@ -9,7 +9,8 @@ from .interventions import detect_intervention, intervention_for_status
 from .profile import autofill_known_profile
 from .task_planning import TaskPlan, EvidenceStore, verify_deliverable
 from .intent_engine import assess_intent, next_step_guidance
-from .orchestration import CapabilityRegistry, ObjectiveLedger
+from .orchestration import CapabilityRegistry, ObjectiveLedger, Capability
+from .connectors import LocalFileConnector, OutlookGraphConnector
 
 import re
 
@@ -261,6 +262,12 @@ class Agent:
             evidence_store = EvidenceStore()
             intent_model = assess_intent(task)
             capability_registry = CapabilityRegistry()
+            self.local_files = LocalFileConnector()
+            self.outlook = OutlookGraphConnector(timeout=self.settings.timeout)
+            if self.local_files.available:
+                capability_registry.register(Capability("local_files", ("files", "office"), True, "read_only_search", "Search and read text files under configured roots."))
+            if self.outlook.available:
+                capability_registry.register(Capability("outlook", ("email",), True, "microsoft_graph_read_only", "Search Outlook messages via Microsoft Graph.", requires_approval=False))
             objective_ledger = ObjectiveLedger(intent_model.get("objectives", []))
             progress.record_navigation(self.browser.page.url)
             messages=[{'role':'user','content':json.dumps({'goal':task,'intent_model':intent_model,'capabilities':capability_registry.for_domains(intent_model.get('likely_tool_domains', [])),'objective_ledger':objective_ledger.snapshot(),'next_step_guidance':next_step_guidance(intent_model, observation={'url':self.browser.page.url, 'title':self.browser.page.title()}),'task_plan':task_plan.snapshot(),'evidence_store':evidence_store.snapshot(),'observation':obs},ensure_ascii=False)}]
@@ -554,6 +561,16 @@ class Agent:
 
     def _act(self, plan):
         kind=plan['action']; page=self.browser.page
+        if kind == 'local_search':
+            return self.local_files.search(plan.get('query') or plan.get('text') or plan.get('value', ''),
+                                           limit=plan.get('limit', 10), extensions=plan.get('extensions'))
+        if kind == 'local_read':
+            return self.local_files.read(plan.get('path') or plan.get('value', ''),
+                                         max_chars=plan.get('max_chars', 12000))
+        if kind == 'outlook_search':
+            return self.outlook.search_messages(plan.get('query') or plan.get('text') or plan.get('value', ''),
+                                                limit=plan.get('limit', 10),
+                                                unread_only=bool(plan.get('unread_only', False)))
         if kind=='inspect': return {'ok':True,'elements':self.browser.inspect(180)}
         if kind=='status': return self.browser.status()
         if kind=='screenshot': return {'ok':True,'path':self.browser.screenshot(plan.get('path') or f'{self.settings.artifact_dir}/manual.png')}
