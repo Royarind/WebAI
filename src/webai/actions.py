@@ -111,7 +111,13 @@ def _recover_locator(page, by, value, name, action):
     # Preserve the established DOM-intelligence recovery for stale CSS/XPath
     # selectors. Accessible-role fallback is specifically for semantic locator
     # mismatches such as a custom dropdown exposed as a button instead of combobox.
-    if not name or by in {"css", "xpath", "test_id"}:
+    if by in {"css", "xpath", "test_id"}:
+        raise original_error
+    # Label/placeholder locators can fail on custom widgets that expose the same
+    # accessible name through ARIA instead. Reuse the user's semantic target as
+    # fallback evidence rather than asking the planner to keep rewriting selectors.
+    fallback_name = name or (value if by in {"label", "placeholder", "role", "text"} else None)
+    if not fallback_name:
         raise original_error
 
     roles = ("button", "link", "checkbox", "radio", "textbox", "searchbox",
@@ -122,7 +128,7 @@ def _recover_locator(page, by, value, name, action):
     for context_index, context in enumerate(contexts):
         for role in roles:
             try:
-                candidate = context.get_by_role(role, name=name, exact=True)
+                candidate = context.get_by_role(role, name=fallback_name, exact=True)
                 count = candidate.count()
                 if count != 1:
                     if count:
@@ -152,7 +158,7 @@ def _recover_locator(page, by, value, name, action):
             # semantic attributes as a bounded fallback before exact text.
             for attribute in ("aria-label", "title", "placeholder", "data-testid"):
                 try:
-                    candidate = context.locator(f"[{attribute}={json.dumps(name)}]")
+                    candidate = context.locator(f"[{attribute}={json.dumps(fallback_name)}]")
                     count = candidate.count()
                     if count == 1 and candidate.is_visible() and not candidate.is_disabled():
                         key = f"{context_index}:" + candidate.evaluate("""el => {
@@ -175,7 +181,7 @@ def _recover_locator(page, by, value, name, action):
                     continue
         if not candidates:
             try:
-                candidate = context.get_by_text(name, exact=True)
+                candidate = context.get_by_text(fallback_name, exact=True)
                 count = candidate.count()
                 if count == 1 and candidate.is_visible():
                     key = f"{context_index}:" + candidate.evaluate("""el => {
