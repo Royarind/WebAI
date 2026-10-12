@@ -61,7 +61,7 @@ class FakeMemory:
         pass
 
 
-def test_agent_resolves_url_when_it_creates_a_new_browser(monkeypatch):
+def test_agent_keeps_owned_browser_open_when_intervention_is_required(monkeypatch):
     import webai.agent as agent_module
 
     monkeypatch.setattr(agent_module, "WebAI", FakeBrowser)
@@ -89,4 +89,4 @@ def test_agent_resolves_url_when_it_creates_a_new_browser(monkeypatch):
     assert created["browser"].opened == ["https://en.wikipedia.org/"]
     assert result["url"] == "https://en.wikipedia.org/"
     assert result["status"] == "needs_input"
-    assert created["browser"].closed is True
+    assert created["browser"].closed is False
