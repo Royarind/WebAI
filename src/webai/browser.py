@@ -91,6 +91,18 @@ class WebAI:
         self._ensure()
         return actions.screenshot(self.page, path)
 
+    def observe(self, limit=180):
+        """Return unified DOM, overlay, frame and interactive-control evidence."""
+        self._ensure()
+        from .interaction_engine import InteractionEngine
+        return InteractionEngine(self.page).observe(limit)
+
+    def interact(self, action, **kwargs):
+        """Run a unified evidence-driven interaction and return verification details."""
+        self._ensure()
+        from .interaction_engine import InteractionEngine
+        return InteractionEngine(self.page).perform(action, **kwargs)
+
     def text(self, by, value, name=None, max_matches=5, max_chars=6000):
         """Read one element or bounded text from multiple matches.
 
