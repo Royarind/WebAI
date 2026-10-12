@@ -39,3 +39,25 @@ def test_quantity_plus_button_changes_input_value():
         assert result["verified"] is True
         assert page.locator("#q").input_value() == "4"
         browser.close()
+
+
+
+def test_native_select_accepts_option_value_and_multi_select():
+    from webai.actions import select_option
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content("""
+          <select id="size"><option value="s">Small</option><option value="m">Medium</option></select>
+          <select id="colors" multiple>
+            <option value="red">Red</option><option value="blue">Blue</option><option value="green">Green</option>
+          </select>
+        """)
+        one = select_option(page, "css", "#size", "m")
+        assert one["verified"] is True
+        assert page.locator("#size").input_value() == "m"
+        many = select_option(page, "css", "#colors", ["red", "blue"])
+        assert many["verified"] is True
+        assert page.locator("#colors").locator("option:checked").count() == 2
+        browser.close()
