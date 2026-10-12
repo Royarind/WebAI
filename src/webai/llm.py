@@ -13,15 +13,15 @@ class LLMClient:
 
     @property
     def provider_name(self):
-        if self.settings.provider == "ollama":
+        if getattr(self.settings, 'provider', 'openrouter') == "ollama":
             return "Ollama"
-        if self.settings.provider == "openrouter":
+        if getattr(self.settings, 'provider', 'openrouter') == "openrouter":
             return "OpenRouter"
-        return self.settings.provider
+        return getattr(self.settings, 'provider', 'openrouter')
 
     def _headers(self):
         headers = {"Content-Type": "application/json"}
-        if self.settings.provider == "ollama":
+        if getattr(self.settings, 'provider', 'openrouter') == "ollama":
             # Ollama's local OpenAI-compatible endpoint does not require an API key.
             return headers
         if not self.settings.api_key:
@@ -179,7 +179,7 @@ class LLMClient:
                 # or "locator strategy: placeholder", but only canonicalize a
                 # recognized strategy token.
                 import re
-                match = re.search(r"(?:get[_]?by[_]?(role|label|placeholder|text|test[_]?id)|\\b(role|label|placeholder|text|test[_]?id|css|xpath)\\b)", raw_by)
+                match = re.search(r"(?:get[_]?by[_]?(role|label|placeholder|text|test[_]?id)|\b(role|label|placeholder|text|test[_]?id|css|xpath)\b)", raw_by)
                 if match:
                     token = next((group for group in match.groups() if group), "")
                     by = token
