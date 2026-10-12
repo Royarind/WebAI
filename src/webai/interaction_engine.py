@@ -114,7 +114,7 @@ class InteractionEngine:
                 self.page, by, value, operation or "choose",
                 target if target is not None else option, name, steps, self.timeout_ms
             )
-        if action in {"hover", "double_click", "press", "upload", "drag_drop"}:
+        if action in {"hover", "double_click", "right_click", "focus", "blur", "press", "upload", "drag_drop"}:
             locator, healed = self.resolve(by, value, name, action)
             locator.scroll_into_view_if_needed(timeout=self.timeout_ms)
             if not locator.is_visible():
@@ -125,10 +125,25 @@ class InteractionEngine:
             elif action == "double_click":
                 locator.dblclick(timeout=self.timeout_ms)
                 verified = True
+            elif action == "right_click":
+                locator.click(button="right", timeout=self.timeout_ms)
+                verified = True
+            elif action == "focus":
+                locator.focus(timeout=self.timeout_ms)
+                verified = locator.evaluate("el => document.activeElement === el")
+                if not verified:
+                    raise RuntimeError("Focus action completed but target did not become active.")
+            elif action == "blur":
+                locator.evaluate("el => el.blur()")
+                verified = not locator.evaluate("el => document.activeElement === el")
+                if not verified:
+                    raise RuntimeError("Blur action completed but target retained focus.")
             elif action == "press":
                 allowed_keys = {"Enter", "Escape", "Tab", "Space", "ArrowUp", "ArrowDown",
                                 "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown",
-                                "Backspace", "Delete"}
+                                "Backspace", "Delete", "Control+A", "Control+C", "Control+V",
+                                "Control+X", "Control+Z", "Control+Y", "Control+Enter",
+                                "Shift+Tab", "Alt+ArrowDown", "Meta+A", "Meta+C", "Meta+V"}
                 if key not in allowed_keys and not (isinstance(key, str) and len(key) == 1):
                     raise ValueError(f"Unsupported key {key!r}.")
                 locator.press(key, timeout=self.timeout_ms)
@@ -218,9 +233,22 @@ class InteractionEngine:
             if direction not in {"up", "down"}:
                 raise ValueError("scroll direction must be up or down.")
             amount = max(100, min(1400, int(text or 650)))
-            self.page.evaluate("(delta) => window.scrollBy(0, delta)", amount if direction == "down" else -amount)
+            delta = amount if direction == "down" else -amount
+            if target_value:
+                locator, healed = self.resolve(target_by or by, target_value, target_name, "scroll")
+                before = locator.evaluate("el => ({top: el.scrollTop, left: el.scrollLeft, height: el.scrollHeight, client: el.clientHeight})")
+                locator.evaluate("(el, delta) => el.scrollBy(0, delta)", delta)
+                self.page.wait_for_timeout(100)
+                after = locator.evaluate("el => ({top: el.scrollTop, left: el.scrollLeft, height: el.scrollHeight, client: el.clientHeight})")
+                changed = before["top"] != after["top"]
+                return {"ok": True, "action": action, "direction": direction, "amount": amount,
+                        "target": target_value, "before": before, "after": after, "verified": changed,
+                        "healed": healed, "url": self.page.url}
+            before = self.page.evaluate("() => window.scrollY")
+            self.page.evaluate("(delta) => window.scrollBy(0, delta)", delta)
+            after = self.page.evaluate("() => window.scrollY")
             return {"ok": True, "action": action, "direction": direction, "amount": amount,
-                    "verified": True, "url": self.page.url}
+                    "before": before, "after": after, "verified": before != after, "url": self.page.url}
         if action == "navigate":
             if not str(value).startswith(("http://", "https://")):
                 raise ValueError("navigate requires an http(s) URL.")
