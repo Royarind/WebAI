@@ -11,7 +11,7 @@ from .task_planning import TaskPlan, EvidenceStore, verify_deliverable
 
 import re
 
-BLOCKED=('purchase','buy now','pay now','payment','delete','remove account','send email','send an email','send message','send a message','submit order','place order','transfer money','publish','confirm booking','finalize order')
+BLOCKED=('purchase','buy now','pay now','payment','delete','remove account','send','submit','checkout','place order','transfer money','publish','confirm booking','finalize order')
 NEGATION = re.compile(r"\b(?:do not|don't|dont|never|avoid|without|no need to|not to|not)\b", re.I)
 
 def sensitive(text):
@@ -364,8 +364,16 @@ class Agent:
                     continue
                 # Consequential actions are not permanently blocked. Pause before
                 # execution and return the exact proposed action for explicit approval.
-                action_description = ' '.join(str(plan.get(key, '')) for key in ('text', 'value', 'name', 'option'))
-                if kind in {'click', 'fill', 'select', 'check'} and sensitive(action_description):
+                action_description = ' '.join(str(plan.get(key, '')) for key in ('text', 'value', 'name', 'option', 'target', 'target_name', 'operation', 'key'))
+                mutating_actions = {'click', 'fill', 'select', 'check', 'control', 'press',
+                                    'double_click', 'right_click', 'click_at', 'drag_drop', 'drag_at'}
+                # Text-labelled consequential actions always require approval.
+                # Vision-only coordinate/keyboard actions also require approval
+                # when the user's task itself requests a consequential outcome.
+                needs_approval = sensitive(action_description) or (
+                    kind in {'click_at', 'drag_at', 'press'} and sensitive_task(task)
+                )
+                if kind in mutating_actions and needs_approval:
                     status = 'needs_approval'
                     summary = 'Approval required before this consequential action can execute.'
                     pending_action = plan
