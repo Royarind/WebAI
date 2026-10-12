@@ -148,7 +148,22 @@ class WebAI:
         chunks = []
         for index in range(limit):
             try:
-                text = loc.nth(index).inner_text().strip() if count > 1 else loc.inner_text().strip()
+                element = loc.nth(index) if count > 1 else loc
+                meta = element.evaluate("""el => {
+                  const type = (el.getAttribute('type') || '').toLowerCase();
+                  const sensitive = ['password', 'hidden'].includes(type) ||
+                    /password|one-time-code|cc-number|cc-csc/i.test(el.getAttribute('autocomplete') || '') ||
+                    /password|secret|token|cvv|cvc|card.?number|security.?code/i.test((el.getAttribute('name') || '') + ' ' + (el.id || ''));
+                  if (sensitive) return {kind: 'redacted', value: '[redacted sensitive field]'};
+                  if (type === 'checkbox' || type === 'radio' || ['checkbox','radio','switch'].includes(el.getAttribute('role'))) {
+                    return {kind: 'state', value: 'checked=' + (('checked' in el) ? !!el.checked : el.getAttribute('aria-checked') === 'true')};
+                  }
+                  if (type === 'file') return {kind: 'files', value: Array.from(el.files || []).map(f => f.name).join(', ')};
+                  if (el.tagName === 'SELECT') return {kind: 'selection', value: Array.from(el.selectedOptions).map(o => (o.label || o.textContent || '').trim()).join(', ')};
+                  if ('value' in el) return {kind: 'value', value: String(el.value || '')};
+                  return {kind: 'text', value: (el.innerText || el.textContent || '').trim()};
+                }""")
+                text = str(meta.get("value") or "").strip()
             except Exception as exc:
                 # Preserve useful text from other matching elements when one
                 # detached or became unreadable during extraction.
