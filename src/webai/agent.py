@@ -328,7 +328,9 @@ class Agent:
             capability_registry = CapabilityRegistry()
             self.local_files = LocalFileConnector()
             self.outlook = OutlookGraphConnector(timeout=self.settings.timeout)
-            self.computer = ComputerUse()
+            # Keep the ComputerUse instance created in __init__. The dashboard
+            # attaches its event_sink there; replacing it here silently disables
+            # live computer/browser activity streaming.
             if self.local_files.available:
                 capability_registry.register(Capability("local_files", ("files", "office"), True, "read_only_search", "Search and read text files under configured roots."))
             if self.outlook.available:
