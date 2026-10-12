@@ -53,19 +53,16 @@ for /f "tokens=5" %%P in ('netstat -ano ^| findstr /R /C:":%PORT% .*LISTENING"')
 )
 
 echo [2/7] Updating source from GitHub...
-git status --porcelain > "%TEMP%\webai_git_status_%RANDOM%.txt"
-set "STATUSFILE="
-for %%F in ("%TEMP%\webai_git_status_*.txt") do (
-  if not defined STATUSFILE set "STATUSFILE=%%~fF"
+REM Ignore untracked files (including a newly downloaded start.bat) when deciding whether tracked source is safe to update.
+git diff --quiet
+if errorlevel 1 (
+  echo [WARNING] Tracked local changes detected. Skipping git pull to protect your edits.
+  goto :install
 )
-if defined STATUSFILE (
-  for %%F in ("%STATUSFILE%") do if %%~zF GTR 0 (
-    echo [WARNING] Local changes detected. To avoid overwriting work, git pull is skipped.
-    echo           Commit or stash your changes, then click start.bat again.
-    del "%STATUSFILE%" >nul 2>&1
-    goto :install
-  )
-  del "%STATUSFILE%" >nul 2>&1
+git diff --cached --quiet
+if errorlevel 1 (
+  echo [WARNING] Staged local changes detected. Skipping git pull to protect your edits.
+  goto :install
 )
 git pull --ff-only
 if errorlevel 1 (
@@ -75,7 +72,7 @@ if errorlevel 1 (
 )
 
 :install
-echo [3/7] Ensuring project virtual environment exists...
+echo [3/8] Ensuring project virtual environment exists...
 if not exist "%VENV_PY%" (
   python -m venv ".venv"
   if errorlevel 1 (
@@ -85,7 +82,7 @@ if not exist "%VENV_PY%" (
   )
 )
 
-echo [4/7] Updating pip tooling...
+echo [4/8] Updating pip tooling...
 "%VENV_PY%" -m pip install --disable-pip-version-check --upgrade pip
 if errorlevel 1 (
   echo [ERROR] pip upgrade failed.
@@ -93,7 +90,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [5/7] Installing/updating WebAI and computer-use dependencies...
+echo [5/8] Installing/updating WebAI and computer-use dependencies...
 "%VENV_PY%" -m pip install --disable-pip-version-check -e ".[computer-use]"
 if errorlevel 1 (
   echo [ERROR] Dependency installation failed. WebAI will not be started.
@@ -101,11 +98,20 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [6/7] Opening WebAI dashboard...
+echo [6/8] Verifying the installed WebAI source...
+"%VENV_PY%" -c "import webai, webai.agent; print('webai package:', webai.__file__); print('agent module:', webai.agent.__file__)"
+if errorlevel 1 (
+  echo [ERROR] Could not import WebAI from this environment.
+  pause
+  exit /b 1
+)
+echo Current Git commit:
+git rev-parse --short HEAD
+echo [7/8] Opening WebAI dashboard...
 start "" "%URL%"
 timeout /t 2 /nobreak >nul
 
-echo [7/7] Starting WebAI server...
+echo [8/8] Starting WebAI server...
 echo Dashboard: %URL%
 echo Keep this window open while using WebAI.
 echo Press Ctrl+C in this window to stop the server.
