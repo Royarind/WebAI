@@ -44,8 +44,8 @@ def _requested_price_ceiling(task):
     """Extract a simple requested price ceiling so the agent cannot silently choose a lower band."""
     text = str(task or "")
     patterns = [
-        r"(?:below|under|less than|maximum|max(?:imum)? price(?: of)?|priced? at most)\\s*(?:₹|rs\\.?\\s*)?([\\d,]+)",
-        r"(?:₹|rs\\.?\\s*)([\\d,]+)\\s*(?:or less|maximum|max|and below)",
+        r"(?:below|under|less than|maximum|max(?:imum)? price(?: of)?|priced? at most)\s*(?:₹|rs\\.?\s*)?([\\d,]+)",
+        r"(?:₹|rs\\.?\s*)([\\d,]+)\s*(?:or less|maximum|max|and below)",
     ]
     for pattern in patterns:
         match = re.search(pattern, text, re.I)
@@ -63,7 +63,7 @@ def _filter_price_mismatch(task, plan):
     if ceiling is None or plan.get("action") not in {"click", "select"}:
         return None
     target = " ".join(str(plan.get(key, "")) for key in ("value", "name", "text", "option"))
-    match = re.search(r"(?:under|up to|upto|less than|below)\\s*(?:₹|rs\\.?\\s*)?([\\d,]+)", target, re.I)
+    match = re.search(r"(?:under|up to|upto|less than|below)\s*(?:₹|rs\\.?\s*)?([\\d,]+)", target, re.I)
     if not match:
         return None
     try:
