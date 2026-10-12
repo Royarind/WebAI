@@ -152,7 +152,7 @@ class LLMClient:
         obj = json.loads(content)
         if not isinstance(obj, dict):
             raise ValueError("Model response must be a JSON object.")
-        allowed = {"inspect", "click", "fill", "select", "check", "control", "read_text", "screenshot", "navigate", "scroll", "finish", "ask_user"}
+        allowed = {"inspect", "click", "fill", "select", "check", "control", "read_text", "screenshot", "navigate", "scroll", "local_search", "local_read", "outlook_search", "finish", "ask_user"}
         action = obj.get("action")
         if isinstance(action, str):
             action = action.strip().lower()
