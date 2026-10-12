@@ -68,7 +68,7 @@ def _recover_locator(page, by, value, name, action):
     try:
         locator = locate(page, by, value, name)
         if locator.count() == 1:
-            if locator.is_visible():
+            if action == "wait_for" or locator.is_visible():
                 return locator, None
             # Preserve legitimate interactions with visually hidden native
             # checkbox/radio/file inputs, whose associated label/file chooser is
