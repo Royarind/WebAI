@@ -119,6 +119,23 @@ def _compact_overlays(overlays, limit=3):
     return compact
 
 
+def _normalize_navigation_url(value):
+    """Strip common Markdown link wrappers from model-generated navigation URLs."""
+    raw = str(value or "").strip()
+    markdown = re.fullmatch(r"\[([^\]]+)\]\((https?://[^)]+)\)", raw)
+    if markdown:
+        raw = markdown.group(2).strip()
+    # Remove a single pair of surrounding angle brackets or quotes only.
+    if len(raw) > 2 and raw[0] == "<" and raw[-1] == ">":
+        raw = raw[1:-1].strip()
+    if raw.startswith(("'", '"')) and raw[-1:] == raw[:1]:
+        raw = raw[1:-1].strip()
+    parsed = urlparse(raw)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(f"Navigation URL is not a valid http(s) URL: {value!r}")
+    return raw
+
+
 def _compact_result(result):
     """Bound action feedback so a long extracted page text cannot flood history."""
     if not isinstance(result, dict):
@@ -180,6 +197,9 @@ class Agent:
                 intervention=None
             messages=[{'role':'user','content':json.dumps({'goal':task,'observation':obs},ensure_ascii=False)}]
             failed_action_signatures = {}
+            visited_pages = []
+            evidence_ledger = []
+            successful_action_signatures = set()
             if intervention:
                 status='needs_input'; summary=intervention.get('reason', 'Human intervention is required.')
             for i in range(0 if intervention else self.settings.max_steps):
@@ -223,6 +243,16 @@ class Agent:
                 timings['planning_seconds'].append(round(time.perf_counter()-phase,3))
                 trace.append({'step':i+1,'plan':plan})
                 kind=plan['action']
+                if kind == 'navigate':
+                    try:
+                        plan['value'] = _normalize_navigation_url(plan.get('value', ''))
+                    except ValueError as invalid_url:
+                        messages.append({'role':'user','content':json.dumps({
+                            'instruction':'The proposed navigation URL was invalid. Do not repeat it. Choose a clean, absolute http(s) URL grounded in the task or current page evidence, or ask the user.',
+                            'invalid_url':str(invalid_url),
+                            'visited_pages':visited_pages[-8:],
+                        },ensure_ascii=False)})
+                        continue
                 signature = json.dumps({key: plan.get(key) for key in ('action','by','value','name','text','option','checked')}, sort_keys=True, ensure_ascii=False)
                 if kind=='finish':
                     status, summary = self._finish_status(plan, page=self.browser.page)
@@ -258,6 +288,18 @@ class Agent:
                 else:
                     failed_action_signatures.pop(signature, None)
                 if kind=='screenshot' and result.get('path'): artifacts.append(result['path'])
+                if result.get('ok') is not False:
+                    successful_action_signatures.add(signature)
+                    current_url = str(self.browser.page.url)
+                    if current_url and (not visited_pages or visited_pages[-1] != current_url):
+                        visited_pages.append(current_url)
+                    if kind == 'read_text' and isinstance(result.get('text'), str) and result['text'].strip():
+                        evidence_ledger.append({
+                            'url': current_url,
+                            'locator': {'by': plan.get('by'), 'value': plan.get('value')},
+                            'text': result['text'][:2200],
+                        })
+                        evidence_ledger = evidence_ledger[-6:]
                 post_profile_filled=autofill_known_profile(self.browser.page)
                 phase=time.perf_counter()
                 compact_result=_compact_result(result)
@@ -276,7 +318,22 @@ class Agent:
                     intervention=detected; status='needs_input'; summary=detected.get('reason','Human intervention is required.')
                     break
                 messages.append({'role':'assistant','content':json.dumps(plan,ensure_ascii=False)})
-                messages.append({'role':'user','content':json.dumps({'execution_result':compact_result,'updated_observation':observation,'instruction':'Verify progress and select exactly one next action. Do not repeat a successful action unnecessarily.'},ensure_ascii=False)})
+                messages.append({'role':'user','content':json.dumps({
+                    'execution_result':compact_result,
+                    'updated_observation':observation,
+                    'task_progress':{
+                        'original_goal':task,
+                        'visited_pages':visited_pages[-8:],
+                        'evidence_ledger':evidence_ledger,
+                        'successful_action_signatures':list(successful_action_signatures)[-12:],
+                    },
+                    'instruction':(
+                        'Update the task plan mentally against the original goal. Preserve extracted facts in the evidence ledger. '
+                        'Do not revisit a URL or repeat a successful action unless you state a specific missing fact that requires it. '
+                        'Choose the next action that advances an incomplete objective. When all requested fields have evidence, produce the final comparison with source URLs and explicitly mark anything unverified. '
+                        'If the current step did not add evidence or complete an objective, change strategy instead of repeating it.'
+                    )
+                },ensure_ascii=False)})
                 # Keep the original goal plus only the latest interaction context.
                 # Unbounded DOM snapshots inflate every OpenRouter request.
                 if len(messages) > 5:
