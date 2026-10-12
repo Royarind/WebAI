@@ -201,3 +201,7 @@ Use the repository's `Start-WebAI.ps1` script instead of manually running `git p
 4. Keep the PowerShell window open while using WebAI.
 
 The script deliberately does **not** overwrite local uncommitted work. If local changes exist, it skips `git pull` and explains why. If port 8765 is already occupied, it asks before stopping the process. Dependency installation still runs automatically when the launcher is run; it is safe to rerun when no code changes are available.
+
+### One-click Windows startup
+
+For Windows, double-click `start.bat` in the project folder. It attempts to stop processes listening on port 8765, pulls the latest GitHub code when the working tree is clean, creates `.venv` if needed, updates pip and installs `.[computer-use]`, opens `http://127.0.0.1:8765`, and starts the server. Keep the console window open while WebAI is running. If local Git changes are present, it skips the pull to protect those changes.
