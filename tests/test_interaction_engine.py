@@ -220,19 +220,19 @@ def test_open_shadow_root_controls_are_resolved_and_clicked():
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page()
-        page.set_content("""
-          <div id="host"></div>
-          <output id="result"></output>
-          <script>
-            const root = document.querySelector('#host').attachShadow({mode:'open'});
-            root.innerHTML = '<button aria-label="Shadow action" onclick="document.querySelector(\'#result\').textContent=\'done\'">Run</button>';
-          </script>
-        """)
+        page.set_content('<div id="host"></div><output id="result"></output>')
+        page.locator("#host").evaluate("""host => {
+          const root = host.attachShadow({mode: 'open'});
+          const button = document.createElement('button');
+          button.setAttribute('aria-label', 'Shadow action');
+          button.textContent = 'Run';
+          button.addEventListener('click', () => document.querySelector('#result').textContent = 'done');
+          root.appendChild(button);
+        }""")
         result = InteractionEngine(page).perform("click", by="role", value="button", name="Shadow action")
         assert result["ok"] is True
         assert page.locator("#result").inner_text() == "done"
         browser.close()
-
 
 def test_custom_upload_button_uses_browser_file_chooser(tmp_path: Path):
     file_path = tmp_path / "attach.txt"
