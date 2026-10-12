@@ -250,6 +250,10 @@ class Agent:
         start=time.time(); perf_start=time.perf_counter(); artifacts=[]; trace=[]; status='failed'; summary=''; owns=False; pending_action=None; intervention=None
         timings={'browser_start_seconds':0.0,'url_discovery_seconds':0.0,'navigation_seconds':0.0,'initial_observation_seconds':0.0,'planning_seconds':[],'action_seconds':[],'post_action_observation_seconds':[],'unattributed_seconds':0.0}
         try:
+            # Route dedicated computer-use tasks before browser/connector setup.
+            computer_result = self._run_computer_only(task, url=url)
+            if computer_result is not None:
+                return computer_result
             # Route pure local-file and Outlook retrieval tasks directly to their
             # read-only connectors instead of opening an unrelated website first.
             connector_result = self._run_connector_only(task, url=url)
