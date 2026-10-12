@@ -362,19 +362,103 @@ def operate_control(page, by, value, operation, target=None, name=None, steps=1,
             if str(actual).strip() != str(target) and str(selected_value) != str(target):
                 raise RuntimeError(f"Dropdown verification failed for {target!r}.")
         else:
-            # Custom dropdowns are opened via the visible control, then selected by exact accessible text.
+            # Custom dropdowns may expose their trigger as a button, combobox,
+            # tab, or generic labelled element. Open once, then inspect rendered
+            # options across the page and its frames before selecting.
             locator.click(timeout=timeout_ms)
-            candidates = page.get_by_role("option", name=str(target), exact=True)
-            if candidates.count() == 0:
-                candidates = page.get_by_text(str(target), exact=True)
-            _one(candidates, "choose dropdown option")
-            candidates.click(timeout=timeout_ms)
-            selected = locator.get_attribute("aria-valuetext") or locator.get_attribute("aria-label") or locator.inner_text()
-            if str(target).casefold() not in str(selected).casefold():
-                # Common custom widgets update a selected/checked option elsewhere.
-                state = page.get_by_role("option", name=str(target), exact=True)
-                if state.count() != 1 or state.get_attribute("aria-selected") != "true":
-                    raise RuntimeError(f"Custom dropdown selection could not be verified for {target!r}.")
+            target_name = str(target).strip()
+            if not target_name:
+                raise ValueError("Dropdown option label must not be empty.")
+            contexts = [page] + [frame for frame in page.frames if frame != page.main_frame]
+            candidates = []
+            diagnostics = []
+            option_roles = ("option", "menuitem", "menuitemcheckbox", "menuitemradio",
+                            "radio", "checkbox", "button", "tab")
+            for context in contexts:
+                for role in option_roles:
+                    try:
+                        option_locator = context.get_by_role(role, name=target_name, exact=True)
+                        count = option_locator.count()
+                        if count == 1 and option_locator.is_visible() and not option_locator.is_disabled():
+                            candidates.append((option_locator, role))
+                        elif count:
+                            diagnostics.append({"role": role, "matches": count})
+                    except Exception:
+                        continue
+            if not candidates:
+                for context in contexts:
+                    try:
+                        option_locator = context.get_by_text(target_name, exact=True)
+                        count = option_locator.count()
+                        if count == 1 and option_locator.is_visible():
+                            candidates.append((option_locator, "exact_text"))
+                        elif count:
+                            diagnostics.append({"strategy": "exact_text", "matches": count})
+                    except Exception:
+                        continue
+            # Deduplicate semantic locators that point to the same DOM node.
+            unique = {}
+            for option_locator, role in candidates:
+                try:
+                    node_key = option_locator.evaluate("""el => {
+                      const parts = [];
+                      while (el && el.nodeType === 1) {
+                        let index = 0, sibling = el;
+                        while ((sibling = sibling.previousElementSibling)) index++;
+                        parts.unshift(index);
+                        el = el.parentElement;
+                      }
+                      return parts.join('/');
+                    }""")
+                    unique[(option_locator.evaluate("el => el.ownerDocument.URL"), node_key)] = (option_locator, role)
+                except Exception:
+                    unique[(id(option_locator), role)] = (option_locator, role)
+            if len(unique) != 1:
+                raise LookupError(
+                    f"Could not uniquely identify visible dropdown option {target_name!r}; "
+                    f"found {len(unique)} distinct candidates. Inspect the open menu and retry with evidence. "
+                    f"Matches: {json.dumps(diagnostics[:10], ensure_ascii=False)}"
+                )
+            option_locator, selected_role = next(iter(unique.values()))
+            option_locator.click(timeout=timeout_ms)
+            # Verify selected/checked state when exposed; otherwise require the
+            # trigger's accessible label/text to reflect the chosen value.
+            verified = False
+            try:
+                option_role = option_locator.get_attribute("role") or selected_role
+                selected_state = (
+                    option_locator.get_attribute("aria-selected") == "true"
+                    or option_locator.get_attribute("aria-checked") == "true"
+                    or option_locator.get_attribute("aria-pressed") == "true"
+                )
+                if option_role in {"radio", "checkbox"}:
+                    selected_state = selected_state or option_locator.is_checked()
+                verified = selected_state
+            except Exception:
+                pass
+            try:
+                selected = locator.get_attribute("aria-valuetext") or locator.get_attribute("aria-label") or locator.inner_text()
+                verified = verified or target_name.casefold() in str(selected).casefold()
+            except Exception:
+                pass
+            if not verified:
+                # Some widgets close the menu and render the chosen value in an
+                # associated value field. Look for one exact visible selected marker.
+                for context in contexts:
+                    try:
+                        selected_nodes = context.locator(
+                            '[aria-selected="true"],[aria-checked="true"],[aria-pressed="true"]'
+                        ).filter(has_text=target_name)
+                        if selected_nodes.count() == 1 and selected_nodes.is_visible():
+                            verified = True
+                            break
+                    except Exception:
+                        continue
+            if not verified:
+                raise RuntimeError(
+                    f"Clicked dropdown option {target_name!r}, but the selected state could not be verified. "
+                    "The menu may have changed; inspect the current page before any retry."
+                )
     elif operation in {"increment", "decrement"}:
         try:
             steps = max(1, min(20, int(steps)))
