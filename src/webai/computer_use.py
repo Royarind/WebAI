@@ -104,7 +104,7 @@ class ComputerUse:
             raise ValueError("File exceeds the 2 MB read limit.")
         text = target.read_text(encoding="utf-8", errors="replace")
         self._event("file_read", path=str(target), characters=min(len(text), max_chars))
-        return {"ok": True, "path": str(target), "text": text[:max(1, min(int(max_chars), 100000)),
+        return {"ok": True, "path": str(target), "text": text[:max(1, min(int(max_chars), 100000))],
                 "truncated": len(text) > max_chars}
 
     def copy(self, source: str, destination: str) -> dict[str, Any]:
