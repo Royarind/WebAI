@@ -260,7 +260,6 @@ class Agent:
             progress = TaskProgress(task)
             task_plan = TaskPlan(task)
             evidence_store = EvidenceStore()
-            intent_model = assess_intent(task)
             capability_registry = CapabilityRegistry()
             self.local_files = LocalFileConnector()
             self.outlook = OutlookGraphConnector(timeout=self.settings.timeout)
@@ -268,6 +267,8 @@ class Agent:
                 capability_registry.register(Capability("local_files", ("files", "office"), True, "read_only_search", "Search and read text files under configured roots."))
             if self.outlook.available:
                 capability_registry.register(Capability("outlook", ("email",), True, "microsoft_graph_read_only", "Search Outlook messages via Microsoft Graph.", requires_approval=False))
+            available_domains = sorted({domain for item in capability_registry.snapshot()["available"] for domain in item["domains"]})
+            intent_model = assess_intent(task, available_capabilities=available_domains)
             objective_ledger = ObjectiveLedger(intent_model.get("objectives", []))
             progress.record_navigation(self.browser.page.url)
             messages=[{'role':'user','content':json.dumps({'goal':task,'intent_model':intent_model,'capabilities':capability_registry.for_domains(intent_model.get('likely_tool_domains', [])),'objective_ledger':objective_ledger.snapshot(),'next_step_guidance':next_step_guidance(intent_model, observation={'url':self.browser.page.url, 'title':self.browser.page.title()}),'task_plan':task_plan.snapshot(),'evidence_store':evidence_store.snapshot(),'observation':obs},ensure_ascii=False)}]
@@ -416,10 +417,17 @@ class Agent:
                             locator={'by':plan.get('by'),'value':plan.get('value')},
                             text=result.get('text',''),
                         )
-                        current_evidence = evidence_store.snapshot()
-                        if current_evidence:
-                            evidence_id = f"evidence_{len(current_evidence)}"
-                            objective_ledger.add_evidence(evidence_id, current_evidence[-1])
+                    if kind in {'read_text', 'local_search', 'local_read', 'outlook_search'} and result.get('ok') is not False:
+                        registered = objective_ledger.snapshot().get('evidence', {})
+                        evidence_id = f"evidence_{len(registered) + 1}"
+                        evidence_record = {
+                            'action': kind,
+                            'url': self.browser.page.url if kind == 'read_text' else None,
+                            'query': plan.get('query') or plan.get('text') or plan.get('value'),
+                            'path': result.get('path'),
+                            'result': compact_result if 'compact_result' in locals() else result,
+                        }
+                        objective_ledger.add_evidence(evidence_id, evidence_record)
                 post_profile_filled=autofill_known_profile(self.browser.page)
                 phase=time.perf_counter()
                 compact_result=_compact_result(result)
