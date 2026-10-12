@@ -45,7 +45,11 @@ _INVENTORY_SCRIPT = r"""(limit) => {
   const label = el => {
     if (el.getAttribute('aria-label')) return el.getAttribute('aria-label').trim();
     if (el.labels && el.labels.length) return [...el.labels].map(x => x.innerText.trim()).join(' ');
-    return (el.innerText || el.value || el.getAttribute('placeholder') || el.getAttribute('title') || '').trim();
+    const type = (el.getAttribute('type') || '').toLowerCase();
+    const sensitive = ['password', 'hidden'].includes(type) ||
+      /password|one-time-code|cc-number|cc-csc/i.test(el.getAttribute('autocomplete') || '') ||
+      /password|secret|token|cvv|cvc|card.?number|security.?code/i.test((el.getAttribute('name') || '') + ' ' + (el.id || ''));
+    return (el.innerText || (!sensitive ? el.value : '') || el.getAttribute('placeholder') || el.getAttribute('title') || '').trim();
   };
   const all = [];
   const walk = root => {
