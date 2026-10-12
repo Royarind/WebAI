@@ -212,3 +212,40 @@ def test_nested_scroll_container_reports_changed_scroll_position():
         assert result["verified"] is True
         assert result["after"]["top"] > result["before"]["top"]
         browser.close()
+
+
+
+def test_open_shadow_root_controls_are_resolved_and_clicked():
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content("""
+          <div id="host"></div>
+          <output id="result"></output>
+          <script>
+            const root = document.querySelector('#host').attachShadow({mode:'open'});
+            root.innerHTML = '<button aria-label="Shadow action" onclick="document.querySelector(\'#result\').textContent=\'done\'">Run</button>';
+          </script>
+        """)
+        result = InteractionEngine(page).perform("click", by="role", value="button", name="Shadow action")
+        assert result["ok"] is True
+        assert page.locator("#result").inner_text() == "done"
+        browser.close()
+
+
+def test_custom_upload_button_uses_browser_file_chooser(tmp_path: Path):
+    file_path = tmp_path / "attach.txt"
+    file_path.write_text("attachment", encoding="utf-8")
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content("""
+          <button id="attach" onclick="document.querySelector('#file').click()">Attach file</button>
+          <input id="file" type="file" hidden>
+        """)
+        result = InteractionEngine(page).perform(
+            "upload", by="role", value="button", name="Attach file", path=str(file_path)
+        )
+        assert result["verified"] is True
+        assert result["files"] == ["attach.txt"]
+        browser.close()
