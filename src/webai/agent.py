@@ -220,7 +220,7 @@ class Agent:
             return None
         text = str(task or "").strip()
         low = text.lower()
-        has_absolute_windows_path = bool(re.search(r"[A-Za-z]:\\\\", text))
+        has_absolute_windows_path = bool(re.search(r"[A-Za-z]:\\", text))
         is_file_read_request = any(word in low for word in ("read ", "open ", "summarize ", "summarise ", "inspect "))
         if not has_absolute_windows_path and not any(word in low for word in ("computer", "local file", "local folder", "my files", "my computer", "filesystem", "drive", "desktop")):
             return None
@@ -229,7 +229,7 @@ class Agent:
                 data = self.computer.capabilities()
                 summary = "Computer-use capabilities retrieved; access follows OS permissions."
             elif has_absolute_windows_path and is_file_read_request:
-                path_match = re.search(r"""([A-Za-z]:\\\\.*?\\.[A-Za-z0-9]{1,10})""", text)
+                path_match = re.search(r"""([A-Za-z]:\\[^"\r\n]*?\.[A-Za-z0-9]{1,10})""", text)
                 if not path_match:
                     return {"status": "needs_input", "summary": "I detected a local file request but could not safely extract the full path. Quote the full path and retry.", "steps": [], "data": {}, "artifacts": [], "elapsed_seconds": 0, "url": None, "intervention": None}
                 target_path = path_match.group(1).strip().rstrip(" .!?,;")
@@ -630,7 +630,7 @@ class Agent:
         self.outlook = OutlookGraphConnector(timeout=self.settings.timeout)
         results = {}
         if local_requested:
-            path_match = re.search(r"""(?:read|open|summari[sz]e)\s+(?:the\s+)?file\s+["']?(.+?\.(?:txt|md|rst|log|json|csv|yaml|yml|xml|html))["']?(?:\s|$)""", task, re.I)
+                path_match = re.search(r"""([A-Za-z]:\\[^"\r\n]*?\.[A-Za-z0-9]{1,10})""", text)
             if not self.local_files.available:
                 results["local_files"] = {"ok": False, "error": "Local file search is not configured. Set WEBAI_FILE_ROOTS to permitted folders, separated by semicolons on Windows."}
             elif path_match:
