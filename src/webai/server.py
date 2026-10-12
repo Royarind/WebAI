@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from threading import Lock
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from .agent import Agent
@@ -12,6 +13,18 @@ app = FastAPI(title="WebAI Local", version="0.4.0")
 # API requests lets a user solve CAPTCHAs, sign in, or handle consent prompts and
 # then resume against the same live page instead of a closed/recreated browser.
 session_agent = Agent(browser=WebAI(headless=False))
+event_lock = Lock()
+computer_events = []
+_event_sequence = 0
+
+def record_computer_event(event):
+    global _event_sequence
+    with event_lock:
+        _event_sequence += 1
+        computer_events.append({"id": _event_sequence, **event})
+        del computer_events[:-250]
+
+session_agent.computer.event_sink = record_computer_event
 last_task = ""
 last_url = ""
 last_result = None
@@ -24,6 +37,7 @@ textarea,input{width:100%;padding:10px;margin:6px 0;box-sizing:border-box}
 button{padding:10px 16px;cursor:pointer;margin:4px 4px 4px 0}
 pre{white-space:pre-wrap;background:#f4f4f4;padding:14px;border-radius:8px;overflow:auto}
 .note{color:#555}.hidden{display:none}.intervention{background:#fff4d6;padding:12px;border-radius:8px}
+#live{min-height:80px;max-height:260px;overflow:auto;background:#101820;color:#d6f5df;padding:14px;border-radius:8px;font:13px ui-monospace,monospace}
 </style></head><body>
 <h1>WebAI Local</h1>
 <p class="note">The visible browser stays open when WebAI needs you to intervene. Only use sites and accounts you are authorized to access.</p>
@@ -36,8 +50,27 @@ pre{white-space:pre-wrap;background:#f4f4f4;padding:14px;border-radius:8px;overf
 <p id="interventionText">Switch to the WebAI browser window and complete the required manual step. Do not close the browser. When finished, click Resume.</p>
 <button id="resume" onclick="resumeTask()">Resume after intervention</button>
 </div>
+<h3>Live computer-use activity</h3>
+<p class="note">Computer-use progress appears here. Windows Explorer may open visibly on your desktop.</p>
+<pre id="live">Waiting for computer-use activity…</pre>
 <pre id="out">Ready.</pre>
 <script>
+let lastEventId=0;
+let eventPoller=null;
+async function pollComputerEvents(){
+ try{
+   const r=await fetch("/api/events?after="+lastEventId);
+   const data=await r.json();
+   if(data.events&&data.events.length){
+     const live=document.querySelector("#live");
+     for(const ev of data.events){
+       lastEventId=Math.max(lastEventId,ev.id||0);
+       live.textContent += (live.textContent==="Waiting for computer-use activity…"?"":"\\n")+"["+new Date(ev.timestamp*1000).toLocaleTimeString()+"] "+(ev.message||ev.kind||"Computer event");
+     }
+     live.scrollTop=live.scrollHeight;
+   }
+ }catch(e){}
+}
 function showResult(data){
  const out=document.querySelector('#out');
  out.textContent=JSON.stringify(data,null,2);
@@ -110,6 +143,12 @@ def resume_task():
     # user's CAPTCHA/login/consent work. Agent observes the current live page.
     last_result = session_agent.run(last_task, url=None)
     return last_result
+
+@app.get("/api/events")
+def get_computer_events(after: int = 0):
+    with event_lock:
+        events = [event for event in computer_events if event["id"] > after]
+    return {"events": events}
 
 @app.get("/api/history")
 def history():
