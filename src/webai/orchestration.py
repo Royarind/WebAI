@@ -110,14 +110,14 @@ class ObjectiveLedger:
             raise KeyError(f"Unknown objective: {objective_id}")
         objective = self._objectives[objective_id]
         if status == "completed":
-            ids = list(dict.fromkeys(evidence_ids or []))
-            missing = [eid for eid in ids if eid not in self._evidence]
-            if not ids or missing:
-                raise ValueError("Objective completion requires at least one registered evidence ID.")
             dependencies = objective["depends_on"]
             unfinished = [dep for dep in dependencies if self._objectives.get(dep, {}).get("status") != "completed"]
             if unfinished:
                 raise ValueError("Cannot complete objective before dependencies: " + ", ".join(unfinished))
+            ids = list(dict.fromkeys(evidence_ids or []))
+            missing = [eid for eid in ids if eid not in self._evidence]
+            if not ids or missing:
+                raise ValueError("Objective completion requires at least one registered evidence ID.")
             objective["evidence_ids"] = ids
         elif evidence_ids:
             objective["evidence_ids"] = list(dict.fromkeys(evidence_ids))
