@@ -7,6 +7,7 @@ from .memory import Memory
 from .locators import overlay_inventory
 from .interventions import detect_intervention, intervention_for_status
 from .profile import autofill_known_profile
+from .task_planning import TaskPlan, EvidenceStore, verify_deliverable
 
 import re
 
@@ -254,6 +255,8 @@ class Agent:
             messages=[{'role':'user','content':json.dumps({'goal':task,'observation':obs},ensure_ascii=False)}]
             failed_action_signatures = {}
             progress = TaskProgress(task)
+            task_plan = TaskPlan(task)
+            evidence_store = EvidenceStore()
             progress.record_navigation(self.browser.page.url)
             if intervention:
                 status='needs_input'; summary=intervention.get('reason', 'Human intervention is required.')
@@ -314,6 +317,8 @@ class Agent:
                 if kind == 'read_text' and progress.repeated_read(plan, self.browser.page.url):
                     messages.append({'role':'user','content':json.dumps({
                         'instruction':'LOOP GUARD: this exact read_text locator has already produced evidence on this URL. Do not execute it again. Use the existing evidence_ledger, choose a different official source or a different locator that answers a missing objective, or finish if the requirements are already satisfied.',
+                        'task_plan':task_plan.snapshot(),
+                        'evidence_store':evidence_store.snapshot()[-8:],
                         'task_progress':progress.snapshot(),
                         'blocked_action':plan,
                     },ensure_ascii=False)})
@@ -329,7 +334,20 @@ class Agent:
                         },ensure_ascii=False)})
                         continue
                 if kind=='finish':
+                    deliverable_check = verify_deliverable(task_plan, evidence_store, plan)
+                    if not deliverable_check.get('verified'):
+                        messages.append({'role':'user','content':json.dumps({
+                            'instruction':'Do not finish yet: the independent deliverable verifier found missing research evidence. Continue with a different official source or collect the missing deliverable. Do not fabricate evidence.',
+                            'deliverable_verification':deliverable_check,
+                            'task_plan':task_plan.snapshot(),
+                            'evidence_store':evidence_store.snapshot()[-8:],
+                        },ensure_ascii=False)})
+                        continue
                     status, summary = self._finish_status(plan, page=self.browser.page)
+                    if status == 'completed':
+                        summary += ' Deliverable checks passed: ' + ', '.join(
+                            item['check'] for item in deliverable_check.get('checks',[]) if item.get('passed')
+                        ) + '.'
                     break
                 if kind=='ask_user':
                     status='needs_input'; summary=plan.get('summary') or plan.get('reason') or 'The agent needs clarification.'
@@ -364,6 +382,12 @@ class Agent:
                 if kind=='screenshot' and result.get('path'): artifacts.append(result['path'])
                 if result.get('ok') is not False:
                     progress.record_action(plan, result, self.browser.page.url)
+                    if kind == 'read_text' and isinstance(result.get('text'), str):
+                        evidence_store.add(
+                            url=self.browser.page.url,
+                            locator={'by':plan.get('by'),'value':plan.get('value')},
+                            text=result.get('text',''),
+                        )
                 post_profile_filled=autofill_known_profile(self.browser.page)
                 phase=time.perf_counter()
                 compact_result=_compact_result(result)
