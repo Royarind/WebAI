@@ -192,8 +192,21 @@ class InteractionEngine:
                 file_path = Path(path).expanduser().resolve(strict=True)
                 if not file_path.is_file():
                     raise ValueError("Upload path must be a file.")
-                locator.set_input_files(str(file_path), timeout=self.timeout_ms)
-                files = locator.evaluate("el => Array.from(el.files || []).map(f => f.name)")
+                tag_type = locator.evaluate("""el => ({
+                  tag: el.tagName.toLowerCase(), type: (el.getAttribute('type') || '').toLowerCase()
+                })""")
+                if tag_type["tag"] == "input" and tag_type["type"] == "file":
+                    locator.set_input_files(str(file_path), timeout=self.timeout_ms)
+                    files = locator.evaluate("el => Array.from(el.files || []).map(f => f.name)")
+                else:
+                    # Many sites hide the native file input behind an Upload/Attach
+                    # button. Capture the browser file chooser event rather than
+                    # attempting to type a path into the page.
+                    with self.page.expect_file_chooser(timeout=self.timeout_ms) as chooser_info:
+                        locator.click(timeout=self.timeout_ms)
+                    chooser = chooser_info.value
+                    chooser.set_files(str(file_path))
+                    files = chooser.element.evaluate("el => Array.from(el.files || []).map(f => f.name)")
                 verified = file_path.name in files
                 if not verified:
                     raise RuntimeError("Upload was attempted but the selected filename could not be verified.")
