@@ -251,6 +251,23 @@ class LLMClient:
             raise ValueError("Model omitted fill text.")
         if obj.get("action") == "navigate" and not str(obj.get("value", "")).startswith(("http://", "https://")):
             raise ValueError("Only http(s) navigation is allowed.")
+        if action in {"click_at", "move_at", "drag_at"}:
+            import math
+            coord_keys = ("x", "y", "to_x", "to_y") if action == "drag_at" else ("x", "y")
+            for key in coord_keys:
+                value = obj.get(key)
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                    raise ValueError(f"{action} requires finite numeric {key} coordinates.")
+        if action == "drag_drop" and not all(isinstance(obj.get(k), str) and obj[k].strip() for k in ("target_by", "target_value")):
+            raise ValueError("drag_drop requires target_by and target_value for its destination.")
+        if action == "upload" and not isinstance(obj.get("path"), str):
+            raise ValueError("upload requires a local file path.")
+        if action == "wait_for" and obj.get("operation", "visible") not in {"visible", "hidden", "attached", "detached"}:
+            raise ValueError("wait_for operation must be visible, hidden, attached, or detached.")
+        if action == "scroll" and obj.get("value", "down") not in {"up", "down"}:
+            raise ValueError("scroll value must be up or down.")
+        if action == "click" and obj.get("dialog_action") not in {None, "accept", "dismiss"}:
+            raise ValueError("dialog_action must be accept or dismiss.")
         return obj
 
     @staticmethod
