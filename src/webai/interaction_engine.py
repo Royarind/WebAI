@@ -332,9 +332,22 @@ class InteractionEngine:
                     "verified": self.page.url == value or self.page.url.startswith(value.rstrip("/") + "/")}
         if action == "read_text":
             locator, healed = self.resolve(by, value, name, action)
-            result = locator.inner_text(timeout=self.timeout_ms)
-            return {"ok": True, "action": action, "text": result[:6000], "verified": bool(result.strip()),
-                    "healed": healed}
+            result = locator.evaluate("""el => {
+              const type = (el.getAttribute('type') || '').toLowerCase();
+              const sensitive = ['password', 'hidden'].includes(type) ||
+                /password|one-time-code|cc-number|cc-csc/i.test(el.getAttribute('autocomplete') || '') ||
+                /password|secret|token|cvv|cvc|card.?number|security.?code/i.test((el.getAttribute('name') || '') + ' ' + (el.id || ''));
+              if (sensitive) return '[redacted sensitive field]';
+              if (type === 'checkbox' || type === 'radio' || ['checkbox','radio','switch'].includes(el.getAttribute('role'))) {
+                return 'checked=' + (('checked' in el) ? !!el.checked : el.getAttribute('aria-checked') === 'true');
+              }
+              if (type === 'file') return Array.from(el.files || []).map(f => f.name).join(', ');
+              if (el.tagName === 'SELECT') return Array.from(el.selectedOptions).map(o => (o.label || o.textContent || '').trim()).join(', ');
+              if ('value' in el) return String(el.value || '');
+              return (el.innerText || el.textContent || '').trim();
+            }""")
+            return {"ok": True, "action": action, "text": str(result or "")[:6000],
+                    "verified": bool(str(result or "").strip()), "healed": healed}
         if action == "screenshot":
             from pathlib import Path
             out = Path(path or "artifacts/page.png")
