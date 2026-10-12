@@ -62,7 +62,7 @@ class InteractionEngine:
                 name: str | None = None, text: str | None = None,
                 option: str | None = None, checked: bool = True,
                 operation: str | None = None, target: Any = None,
-                steps: int = 1, path: str | None = None,
+                steps: int = 1, path: str | list[str] | None = None,
                 target_by: str | None = None, target_value: str | None = None,
                 target_name: str | None = None, key: str | None = None,
                 dialog_action: str | None = None, prompt_text: str | None = None,
@@ -188,16 +188,19 @@ class InteractionEngine:
                 verified = False
             elif action == "upload":
                 if not path:
-                    raise ValueError("upload requires path to an existing local file.")
+                    raise ValueError("upload requires path to one or more existing local files.")
                 from pathlib import Path
-                file_path = Path(path).expanduser().resolve(strict=True)
-                if not file_path.is_file():
-                    raise ValueError("Upload path must be a file.")
+                raw_paths = path if isinstance(path, list) else [path]
+                file_paths = [Path(item).expanduser().resolve(strict=True) for item in raw_paths]
+                if not file_paths or any(not item.is_file() for item in file_paths):
+                    raise ValueError("Every upload path must point to an existing file.")
+                set_files = [str(item) for item in file_paths]
+                expected_names = [item.name for item in file_paths]
                 tag_type = locator.evaluate("""el => ({
                   tag: el.tagName.toLowerCase(), type: (el.getAttribute('type') || '').toLowerCase()
                 })""")
                 if tag_type["tag"] == "input" and tag_type["type"] == "file":
-                    locator.set_input_files(str(file_path), timeout=self.timeout_ms)
+                    locator.set_input_files(set_files, timeout=self.timeout_ms)
                     files = locator.evaluate("el => Array.from(el.files || []).map(f => f.name)")
                 else:
                     # Many sites hide the native file input behind an Upload/Attach
@@ -206,12 +209,12 @@ class InteractionEngine:
                     with self.page.expect_file_chooser(timeout=self.timeout_ms) as chooser_info:
                         locator.click(timeout=self.timeout_ms)
                     chooser = chooser_info.value
-                    chooser.set_files(str(file_path))
+                    chooser.set_files(set_files)
                     files = chooser.element.evaluate("el => Array.from(el.files || []).map(f => f.name)")
-                verified = file_path.name in files
+                verified = all(name in files for name in expected_names)
                 if not verified:
-                    raise RuntimeError("Upload was attempted but the selected filename could not be verified.")
-                return {"ok": True, "action": action, "path": str(file_path),
+                    raise RuntimeError(f"Upload was attempted but expected files {expected_names!r} were not all observable; got {files!r}.")
+                return {"ok": True, "action": action, "path": set_files,
                         "files": files, "verified": True, "healed": healed}
             else:
                 if not target_by or not target_value:
