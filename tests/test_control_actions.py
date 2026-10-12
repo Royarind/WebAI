@@ -61,3 +61,34 @@ def test_native_select_accepts_option_value_and_multi_select():
         assert many["verified"] is True
         assert page.locator("#colors").locator("option:checked").count() == 2
         browser.close()
+
+
+
+def test_custom_dropdown_waits_for_delayed_options():
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content("""
+          <button id="trip" aria-label="Round trip">Round trip</button>
+          <div id="menu"></div>
+        """)
+        page.locator("#trip").evaluate("""el => {
+          el.addEventListener('click', () => {
+            setTimeout(() => {
+              const option = document.createElement('div');
+              option.setAttribute('role', 'option');
+              option.setAttribute('aria-selected', 'false');
+              option.textContent = 'One way';
+              option.onclick = () => {
+                option.setAttribute('aria-selected', 'true');
+                el.setAttribute('aria-label', 'One way');
+                el.textContent = 'One way';
+              };
+              document.querySelector('#menu').replaceChildren(option);
+            }, 180);
+          });
+        }""")
+        result = operate_control(page, "role", "combobox", "choose", "One way", name="Round trip")
+        assert result["verified"] is True
+        assert page.get_by_role("option", name="One way").get_attribute("aria-selected") == "true"
+        browser.close()
