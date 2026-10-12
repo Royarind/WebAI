@@ -40,17 +40,17 @@ class LLMClient:
                 json=payload,
                 # Local CPU inference can take longer than hosted requests.
                 # Honor WEBAI_LLM_TIMEOUT for Ollama; keep the hosted-provider cap.
-                timeout=(5, s.timeout if s.provider == "ollama" else min(s.timeout, 30)),
+                timeout=(5, s.timeout if getattr(s, "provider", "openrouter") == "ollama" else min(s.timeout, 30)),
             )
         except requests.exceptions.ConnectionError as exc:
-            if s.provider == "ollama":
+            if getattr(s, "provider", "openrouter") == "ollama":
                 raise RuntimeError(
                     f"Cannot connect to Ollama at {s.base_url}. Start Ollama and ensure the "
                     f"configured model '{s.model}' is installed (for example: ollama pull {s.model})."
                 ) from exc
             raise RuntimeError(f"Could not connect to the configured LLM provider at {s.base_url}.") from exc
         except requests.exceptions.Timeout as exc:
-            if s.provider == "ollama":
+            if getattr(s, "provider", "openrouter") == "ollama":
                 raise RuntimeError(
                     f"Ollama timed out during {purpose}. CPU inference can be slow; try a smaller "
                     "model, reduce page context, or increase WEBAI_LLM_TIMEOUT."
@@ -305,7 +305,7 @@ class LLMClient:
         s = self.settings
         self._headers()  # Fail early when a hosted provider key is missing.
         system_prompt = SYSTEM
-        if s.provider == "ollama":
+        if getattr(s, "provider", "openrouter") == "ollama":
             # Qwen3 supports /no_think to avoid spending local CPU time on
             # hidden reasoning for a task that requires a small JSON action.
             system_prompt += (
@@ -344,7 +344,7 @@ class LLMClient:
             }
             # Ollama supports OpenAI-compatible JSON mode. Keep this provider-
             # specific so cloud-provider request behavior remains unchanged.
-            if s.provider == "ollama":
+            if getattr(s, "provider", "openrouter") == "ollama":
                 request_payload["response_format"] = {"type": "json_object"}
             response = self._post_chat(request_payload, "action planning")
             content = self._response_content(response, "action planning", self.provider_name)
