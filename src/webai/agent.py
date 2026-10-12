@@ -215,6 +215,13 @@ class Agent:
         start=time.time(); perf_start=time.perf_counter(); artifacts=[]; trace=[]; status='failed'; summary=''; owns=False; pending_action=None; intervention=None
         timings={'browser_start_seconds':0.0,'url_discovery_seconds':0.0,'navigation_seconds':0.0,'initial_observation_seconds':0.0,'planning_seconds':[],'action_seconds':[],'post_action_observation_seconds':[],'unattributed_seconds':0.0}
         try:
+            # Route pure local-file and Outlook retrieval tasks directly to their
+            # read-only connectors instead of opening an unrelated website first.
+            connector_result = self._run_connector_only(task, url=url)
+            if connector_result is not None:
+                status = connector_result["status"]
+                summary = connector_result["summary"]
+                return connector_result
             owns=self.browser is None
             if owns:
                 phase=time.perf_counter()
@@ -545,6 +552,79 @@ class Agent:
             'completed_unverified',
             f'{summary} Live-page verification was inconclusive: {reason}'
         )
+
+    def _run_connector_only(self, task, *, url=None):
+        """Execute clearly app-specific retrieval tasks without launching a browser."""
+        if url or (self.browser is not None and self.browser.page is not None):
+            return None
+        low = task.lower()
+        browser_requested = any(term in low for term in ("website", "web page", "webpage", "browser", "online search", "open the site"))
+        if browser_requested:
+            return None
+
+        local_requested = any(term in low for term in ("local file", "local files", "my files", "desktop files", "folder", "file on my computer", "documents on my computer"))
+        outlook_requested = any(term in low for term in ("outlook", "inbox", "my emails", "my email", "email messages", "mailbox"))
+        if not local_requested and not outlook_requested:
+            return None
+
+        self.local_files = LocalFileConnector()
+        self.outlook = OutlookGraphConnector(timeout=self.settings.timeout)
+        results = {}
+        if local_requested:
+            path_match = re.search(r"""(?:read|open|summari[sz]e)\s+(?:the\s+)?file\s+["']?(.+?\.(?:txt|md|rst|log|json|csv|yaml|yml|xml|html))["']?(?:\s|$)""", task, re.I)
+            if not self.local_files.available:
+                results["local_files"] = {"ok": False, "error": "Local file search is not configured. Set WEBAI_FILE_ROOTS to permitted folders, separated by semicolons on Windows."}
+            elif path_match:
+                results["local_files"] = self.local_files.read(path_match.group(1).strip())
+            else:
+                query_match = re.search(r"\b(?:for|about|containing|related to|regarding|named|called)\s+(.+)$", task, re.I)
+                query = query_match.group(1).strip(" .!?\\\"'") if query_match else re.sub(
+                    r"\b(search|find|locate|look for|in|my|local|files?|folders?|documents?|on my computer|on my desktop|please)\b",
+                    " ", task, flags=re.I)
+                query = re.sub(r"\s+", " ", query).strip(" .!?")
+                results["local_files"] = self.local_files.search(query or task, limit=10)
+
+        if outlook_requested:
+            unread_only = any(term in low for term in ("unread", "not read"))
+            broad_briefing = any(term in low for term in ("summarize", "summary", "catch me up", "all relevant", "recent emails", "latest emails", "inbox"))
+            if not self.outlook.available:
+                results["outlook"] = {"ok": False, "error": "Outlook is not configured. Set WEBAI_OUTLOOK_ACCESS_TOKEN to a Microsoft Graph access token with Mail.Read permission."}
+            elif broad_briefing:
+                results["outlook"] = self.outlook.list_recent_messages(limit=15, unread_only=unread_only)
+            else:
+                query_match = re.search(r"\b(?:for|about|containing|related to|regarding)\s+(.+)$", task, re.I)
+                query = query_match.group(1).strip(" .!?\\\"'") if query_match else ""
+                if query:
+                    results["outlook"] = self.outlook.search_messages(query, limit=15, unread_only=unread_only)
+                else:
+                    results["outlook"] = self.outlook.list_recent_messages(limit=15, unread_only=unread_only)
+
+        failures = [name for name, result in results.items() if result.get("ok") is not True]
+        counts = {name: result.get("count", len(result.get("results", [])) if isinstance(result.get("results"), list) else 0)
+                  for name, result in results.items()}
+        if failures:
+            status = "needs_input"
+            summary = "Connector setup or access is needed: " + "; ".join(
+                f"{name}: {results[name].get('error', 'connector unavailable')}" for name in failures
+            )
+        else:
+            status = "completed"
+            summary = "Read-only retrieval completed. " + "; ".join(
+                f"{name}: {counts[name]} result(s)" for name in results
+            ) + ". Review the returned data before taking any consequential action."
+        return {
+            "status": status,
+            "summary": summary,
+            "steps": [{"step": i + 1, "plan": {"action": name}, "result": result}
+                      for i, (name, result) in enumerate(results.items())],
+            "data": results,
+            "artifacts": [],
+            "elapsed_seconds": 0,
+            "url": None,
+            "intervention": ({"type": "connector_configuration", "title": "Connector setup required",
+                              "reason": summary, "user_action": "Configure the connector and rerun the request."}
+                             if failures else None),
+        }
 
     def _execute_action_with_recovery(self, plan):
         """Convert an individual browser-action exception into planner feedback.
