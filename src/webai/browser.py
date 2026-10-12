@@ -87,9 +87,9 @@ class WebAI:
         self.page.wait_for_timeout(250)
         return {"ok": True, "direction": direction, "amount": amount, "url": self.page.url}
 
-    def screenshot(self, path="artifacts/page.png"):
+    def screenshot(self, path="artifacts/page.png", full_page=True):
         self._ensure()
-        return actions.screenshot(self.page, path)
+        return actions.screenshot(self.page, path, full_page=full_page)
 
     def observe(self, limit=180):
         """Return unified DOM, overlay, frame and interactive-control evidence."""
