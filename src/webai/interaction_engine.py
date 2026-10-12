@@ -295,10 +295,8 @@ class InteractionEngine:
             try:
                 locator, healed = self.resolve(by, value, name, "wait_for")
             except (LookupError, ValueError):
-                # For hidden/detached waits, absence is itself the expected state.
-                # Build the locator without requiring an existing visible match.
-                if state not in {"hidden", "detached"}:
-                    raise
+                # A wait locator must be allowed to match in the future; do not
+                # require an element to exist before waiting for visible/attached.
                 locator = make_locator(self.page, by, value, name)
                 healed = None
             locator.wait_for(state=state, timeout=self.timeout_ms)
