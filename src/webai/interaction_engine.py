@@ -154,9 +154,24 @@ class InteractionEngine:
             )
         if action in {"hover", "double_click", "right_click", "focus", "blur", "press", "upload", "drag_drop"}:
             locator, healed = self.resolve(by, value, name, action)
-            locator.scroll_into_view_if_needed(timeout=self.timeout_ms)
-            if not locator.is_visible():
-                raise LookupError(f"Target for {action} is not visible.")
+            upload_meta = None
+            if action == "upload":
+                upload_meta = locator.evaluate("""el => ({
+                  tag: el.tagName.toLowerCase(), type: (el.getAttribute('type') || '').toLowerCase(),
+                  disabled: !!el.disabled || el.getAttribute('aria-disabled') === 'true'
+                })""")
+                if upload_meta["disabled"]:
+                    raise ValueError("Cannot upload through a disabled control.")
+                # Native file inputs are often intentionally hidden behind a
+                # visible Upload button. set_input_files works without exposing it.
+                if not (upload_meta["tag"] == "input" and upload_meta["type"] == "file"):
+                    locator.scroll_into_view_if_needed(timeout=self.timeout_ms)
+                    if not locator.is_visible():
+                        raise LookupError("Upload trigger is not visible.")
+            else:
+                locator.scroll_into_view_if_needed(timeout=self.timeout_ms)
+                if not locator.is_visible():
+                    raise LookupError(f"Target for {action} is not visible.")
             if action == "hover":
                 locator.hover(timeout=self.timeout_ms)
                 verified = locator.evaluate("el => !!(el.matches(':hover') || el.contains(document.activeElement))")
@@ -196,9 +211,7 @@ class InteractionEngine:
                     raise ValueError("Every upload path must point to an existing file.")
                 set_files = [str(item) for item in file_paths]
                 expected_names = [item.name for item in file_paths]
-                tag_type = locator.evaluate("""el => ({
-                  tag: el.tagName.toLowerCase(), type: (el.getAttribute('type') || '').toLowerCase()
-                })""")
+                tag_type = upload_meta
                 if tag_type["tag"] == "input" and tag_type["type"] == "file":
                     locator.set_input_files(set_files, timeout=self.timeout_ms)
                     files = locator.evaluate("el => Array.from(el.files || []).map(f => f.name)")
