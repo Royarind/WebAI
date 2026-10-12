@@ -10,6 +10,7 @@ def test_custom_dropdown_recovers_from_wrong_accessible_role_and_verifies_select
         browser = p.chromium.launch()
         page = browser.new_page()
         page.set_content("""
+          <div role="combobox" aria-label="Round trip" style="display:none"></div>
           <button id="trip" aria-label="Round trip">Round trip</button>
           <div id="menu"></div>
         """)
