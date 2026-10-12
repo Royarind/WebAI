@@ -270,3 +270,35 @@ def test_drag_drop_verifies_item_moved_into_destination():
         assert result["verified"] is True
         assert page.locator("#destination #card").count() == 1
         browser.close()
+
+
+
+def test_select_action_routes_custom_dropdown_to_verified_choose_operation():
+    from webai.actions import select_option
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content("""
+          <button id="trip" aria-label="Round trip">Round trip</button>
+          <div id="menu"></div>
+        """)
+        page.locator("#trip").evaluate("""el => {
+          el.addEventListener('click', () => {
+            const option = document.createElement('div');
+            option.setAttribute('role', 'option');
+            option.setAttribute('aria-selected', 'false');
+            option.textContent = 'One way';
+            option.onclick = () => {
+              option.setAttribute('aria-selected', 'true');
+              el.setAttribute('aria-label', 'One way');
+              el.textContent = 'One way';
+            };
+            document.querySelector('#menu').replaceChildren(option);
+          });
+        }""")
+        result = select_option(page, "role", "combobox", "One way", "Round trip")
+        assert result["ok"] is True
+        assert result["verified"] is True
+        assert page.get_by_role("button", name="One way", exact=True).count() == 1
+        browser.close()
