@@ -268,7 +268,7 @@ class Agent:
                 shot=None
                 if self.settings.vision_enabled:
                     try:
-                        shot=self.browser.screenshot(f'{self.settings.artifact_dir}/agent_step_{int(time.time())}_{i+1}.png')
+                        shot=self.browser.screenshot(f'{self.settings.artifact_dir}/agent_step_{int(time.time())}_{i+1}.png', full_page=False)
                         artifacts.append(shot)
                     except Exception:
                         pass
