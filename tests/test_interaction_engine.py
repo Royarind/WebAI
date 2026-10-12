@@ -351,3 +351,17 @@ def test_read_text_returns_form_values_but_redacts_passwords():
         assert toolkit.text("css", "#password") == "[redacted sensitive field]"
         assert toolkit.text("css", "#query") == "wireless mouse"
         browser.close()
+
+def test_label_locator_recovers_to_matching_aria_label_on_custom_input():
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content("""
+          <input type="text" aria-label="Where from?" placeholder="Origin" />
+        """)
+        from webai.actions import fill
+        result = fill(page, "label", "Where from?", "Goa")
+        assert result["ok"] is True
+        assert result["verified"] is True
+        assert page.get_by_label("Where from?").input_value() == "Goa"
+        browser.close()
