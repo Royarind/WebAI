@@ -55,64 +55,8 @@ class InteractionEngine:
             return False
 
     def resolve(self, by: str, value: str, name: str | None = None, action: str = "interact"):
-        """Resolve the requested locator, then try accessible alternatives by exact name.
-
-        Fallbacks are considered only when the original locator cannot be resolved
-        uniquely. A fallback is accepted only when exactly one visible, enabled
-        element across the page and its frames matches.
-        """
-        try:
-            return actions._recover_locator(self.page, by, value, name, action)
-        except (LookupError, ValueError) as original:
-            if not name:
-                raise
-            candidates = []
-            diagnostics = []
-            contexts = [self.page] + [frame for frame in self.page.frames if frame != self.page.main_frame]
-            for context_index, context in enumerate(contexts):
-                for role in ACTIONABLE_ROLES:
-                    try:
-                        locator = context.get_by_role(role, name=name, exact=True)
-                        count = locator.count()
-                        if count == 1 and locator.is_visible() and not locator.is_disabled():
-                            candidates.append((locator, {"context": context_index, "role": role}))
-                        elif count:
-                            diagnostics.append({"context": context_index, "role": role, "matches": count})
-                    except Exception:
-                        continue
-                try:
-                    text_locator = context.get_by_text(name, exact=True)
-                    count = text_locator.count()
-                    if count == 1 and text_locator.is_visible():
-                        candidates.append((text_locator, {"context": context_index, "strategy": "exact_text"}))
-                    elif count:
-                        diagnostics.append({"context": context_index, "strategy": "exact_text", "matches": count})
-                except Exception:
-                    pass
-            # Deduplicate locators which resolve to the same DOM element through
-            # multiple semantic strategies.
-            unique = []
-            for locator, strategy in candidates:
-                try:
-                    element = locator.evaluate("el => el")
-                    if not any(existing[0].evaluate("el => el === arguments[0]", element) for existing in unique):
-                        unique.append((locator, strategy))
-                except Exception:
-                    unique.append((locator, strategy))
-            if len(unique) != 1:
-                if len(unique) > 1:
-                    raise ValueError(
-                        f"Could not safely recover {action} target {name!r}: "
-                        f"{len(unique)} visible candidates remain. Inspect the page and specify a unique target. "
-                        f"Other matches: {json.dumps(diagnostics[:12], ensure_ascii=False)}"
-                    ) from original
-                raise original
-            locator, strategy = unique[0]
-            return locator, {
-                "from": {"by": by, "value": value, "name": name},
-                "to": strategy,
-                "reason": str(original),
-            }
+        """Resolve a unique target using the shared evidence-driven recovery logic."""
+        return actions._recover_locator(self.page, by, value, name, action)
 
     def perform(self, action: str, *, by: str = "role", value: str = "",
                 name: str | None = None, text: str | None = None,
