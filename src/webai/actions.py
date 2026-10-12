@@ -73,7 +73,10 @@ def _recover_locator(page, by, value, name, action):
         original_error = first_error
     else:
         original_error = LookupError("The requested locator did not resolve uniquely.")
-    if not name:
+    # Preserve the established DOM-intelligence recovery for stale CSS/XPath
+    # selectors. Accessible-role fallback is specifically for semantic locator
+    # mismatches such as a custom dropdown exposed as a button instead of combobox.
+    if not name or by in {"css", "xpath", "test_id"}:
         raise original_error
 
     roles = ("button", "link", "checkbox", "radio", "textbox", "searchbox",
