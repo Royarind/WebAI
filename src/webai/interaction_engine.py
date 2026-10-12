@@ -186,6 +186,23 @@ class InteractionEngine:
             return {"ok": True, "action": action, "verified": bool(verified),
                     "locator": {"by": by, "value": value, "name": name},
                     "healed": healed, "url_before": before_url, "url_after": self.page.url}
+        if action == "download":
+            if not value and not name:
+                raise ValueError("download requires a unique control locator.")
+            locator, healed = self.resolve(by, value, name, "download")
+            with self.page.expect_download(timeout=self.timeout_ms) as download_info:
+                locator.click(timeout=self.timeout_ms)
+            download = download_info.value
+            if path:
+                from pathlib import Path
+                destination = Path(path)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                download.save_as(str(destination))
+                saved_path = str(destination.resolve())
+            else:
+                saved_path = None
+            return {"ok": True, "action": action, "suggested_filename": download.suggested_filename,
+                    "path": saved_path, "verified": bool(download.suggested_filename), "healed": healed}
         if action == "wait_for":
             state = str(operation or "visible").lower()
             if state not in {"visible", "hidden", "attached", "detached"}:
