@@ -1,9 +1,44 @@
-# WebAI DOM Intelligence Engine
+# WebAI — Evidence-driven browser interaction agent
 
-Drop-in Playwright module for deeper DOM traversal, candidate ranking, safe click attempts, and outcome validation.
+WebAI is a local Playwright-based web agent. It combines accessible locators, DOM inventory, bounded recovery, task planning and outcome verification. The interaction engine is a shared execution layer, not a list of website-specific scripts.
 
-## Important
-This is an enhancement module, not a verified patch to your installed WebAI project because its exact source archive was not attached in this turn. It is designed to be integrated into the existing Playwright toolkit. Review `integration_example.py` and adapt the call site in your action layer.
+## General interaction engine
+
+The implementation in `src/webai/interaction_engine.py` exposes a unified observation and interaction API through `WebAI.observe()` and `WebAI.interact()`. Existing convenience methods remain available.
+
+Supported interaction families:
+
+- **Semantic controls:** click, fill, native/custom select, checkbox/radio/switch, slider and quantity controls.
+- **Mouse and keyboard:** hover, double-click, right-click, focus, blur, Enter/Escape/Tab/arrows, supported modifier shortcuts, and screenshot-grounded coordinate click/move/drag.
+- **Custom widgets:** comboboxes, listboxes, menu items, tabs, ARIA controls, date/calendar widgets, autocomplete and nested menus through the common locator/control workflow.
+- **Composite pages:** forms and multi-step pages, accordions, tabs, carousels, table/grid rows, pagination, product variants and filters using observable controls.
+- **Files:** upload through a native file input or custom file chooser, and downloads with optional save destination.
+- **Dynamic content:** bounded waits, async-rendered options, page scroll and nested scroll containers.
+- **Browser structure:** open shadow DOM inventory, accessible iframe traversal, popup/new-page tracking and JavaScript alert/confirm/prompt handling.
+- **Visual fallback:** when `WEBAI_VISION_ENABLED=true` and the selected model supports images, the planner receives a current viewport screenshot. Coordinate actions are bounded to that viewport and require follow-up observation.
+
+### Interaction contract and safety
+
+1. Observe the current page, visible controls, overlays and frames.
+2. Resolve a unique target; if a role is wrong, try evidence-backed accessible-role recovery.
+3. Execute a single interaction without blindly repeating a potentially successful action.
+4. Verify observable state changes where possible. A dispatched click/keypress is not by itself proof that the user's goal completed.
+5. On ambiguity, report diagnostics and ask for clarification instead of choosing an arbitrary element.
+6. JavaScript dialogs are dismissed by default; acceptance must be explicitly requested in the action.
+7. WebAI's task safety guard continues to require approval for consequential actions such as purchases, sending messages, deletion and final submissions. It must not bypass CAPTCHA, MFA or access controls.
+
+Not every website exposes the same semantics. Canvas-only widgets, inaccessible cross-origin frames, anti-bot challenges and browser/OS permission prompts may require visual support or user intervention. No engine can guarantee automation on every site; completion must be grounded in live evidence.
+
+## Tests
+
+Run the regression suite after installing the project and Chromium:
+
+```powershell
+python -m pip install -e ".[dev]"
+python -m pip install -r requirements-test.txt
+python -m playwright install chromium
+python -m pytest -q
+```
 
 ## What it does
 - Inspects the DOM from root to descendants, including leaf elements and ancestor/sibling context.
