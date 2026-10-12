@@ -35,7 +35,8 @@ _INVENTORY_SCRIPT = r"""(limit) => {
     '[role="tab"]', '[role="switch"]', '[role="slider"]', '[role="spinbutton"]',
     '[role="searchbox"]', '[role="textbox"]', '[role="treeitem"]', '[role="gridcell"]',
     '[role="row"]', '[role="columnheader"]', '[role="dialog"]', '[aria-haspopup]',
-    '[aria-expanded]', '[aria-pressed]', '[aria-selected]', '[data-testid]'
+    '[aria-expanded]', '[aria-pressed]', '[aria-selected]',
+    '[aria-label]', '[data-testid][role]', '[data-testid][aria-label]', '[data-testid][tabindex]'
   ].join(',');
   const visible = el => {
     const s = getComputedStyle(el), r = el.getBoundingClientRect();
@@ -54,6 +55,16 @@ _INVENTORY_SCRIPT = r"""(limit) => {
     }
   };
   walk(document);
+  const priority = el => {
+    if (/^(A|BUTTON|INPUT|TEXTAREA|SELECT|OPTION|SUMMARY)$/.test(el.tagName)) return 0;
+    const role = el.getAttribute('role') || '';
+    if (/^(button|link|checkbox|radio|combobox|listbox|option|menuitem|tab|switch|slider|spinbutton|searchbox|textbox)$/.test(role)) return 1;
+    if (el.hasAttribute('aria-haspopup') || el.hasAttribute('aria-expanded')) return 2;
+    if (el.hasAttribute('aria-checked') || el.hasAttribute('aria-selected') || el.hasAttribute('aria-pressed')) return 3;
+    if (el.hasAttribute('tabindex')) return 4;
+    return 5;
+  };
+  all.sort((a, b) => priority(a) - priority(b));
   return all.slice(0, limit).map((el, i) => ({
     index: i, tag: el.tagName.toLowerCase(), type: el.getAttribute('type') || '',
     role: el.getAttribute('role') || '', name: label(el).slice(0, 160), id: el.id || '',
