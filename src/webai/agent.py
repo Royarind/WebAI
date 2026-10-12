@@ -13,6 +13,7 @@ from .orchestration import CapabilityRegistry, ObjectiveLedger, Capability
 from .connectors import LocalFileConnector, OutlookGraphConnector
 
 import re
+from .computer_use import ComputerUse
 
 BLOCKED=('purchase','buy now','pay now','payment','delete','remove account','send email','send message','submit order','place order','transfer money','publish','confirm booking','finalize order')
 NEGATION = re.compile(r"\b(?:do not|don't|dont|never|avoid|without|no need to|not to|not)\b", re.I)
@@ -270,6 +271,7 @@ class Agent:
             capability_registry = CapabilityRegistry()
             self.local_files = LocalFileConnector()
             self.outlook = OutlookGraphConnector(timeout=self.settings.timeout)
+            self.computer = ComputerUse()
             if self.local_files.available:
                 capability_registry.register(Capability("local_files", ("files", "office"), True, "read_only_search", "Search and read text files under configured roots."))
             if self.outlook.available:
@@ -659,6 +661,15 @@ class Agent:
             return self.outlook.search_messages(plan.get('query') or plan.get('text') or plan.get('value', ''),
                                                 limit=plan.get('limit', 10),
                                                 unread_only=bool(plan.get('unread_only', False)))
+        if kind == 'computer_search': return self.computer.search(plan.get('query') or plan.get('text') or plan.get('value', ''), limit=plan.get('limit', 30))
+        if kind == 'computer_read': return self.computer.read(plan.get('path') or plan.get('value', ''), max_chars=plan.get('max_chars', 20000))
+        if kind == 'computer_copy': return self.computer.copy(plan['source'], plan['destination'])
+        if kind == 'computer_move': return self.computer.move(plan['source'], plan['destination'])
+        if kind == 'computer_create_directory': return self.computer.create_directory(plan.get('path') or plan.get('value', ''))
+        if kind == 'computer_create_text_file': return self.computer.create_text_file(plan.get('path', ''), plan.get('text', ''), overwrite=bool(plan.get('overwrite', False)))
+        if kind == 'computer_delete': return self.computer.request_delete(plan.get('path') or plan.get('value', ''))
+        if kind == 'desktop_screenshot': return self.computer.screenshot(plan.get('path'))
+        if kind == 'desktop_action': return self.computer.desktop_action(plan.get('operation', ''), **(plan.get('arguments') or {}))
         if kind=='inspect': return {'ok':True,'elements':self.browser.inspect(180)}
         if kind=='status': return self.browser.status()
         if kind=='screenshot': return {'ok':True,'path':self.browser.screenshot(plan.get('path') or f'{self.settings.artifact_dir}/manual.png')}
