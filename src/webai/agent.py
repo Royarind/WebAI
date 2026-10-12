@@ -465,8 +465,10 @@ class Agent:
                     intervention={'type':'approval_required','title':'Approval required','reason':summary,'url':self.browser.page.url,'user_action':'Review the proposed action and explicitly approve it before execution.'}
                     break
                 if kind=='navigate' and not plan.get('value','').startswith(('http://','https://')): raise ValueError('Navigation must use http(s).')
+                self.computer._event("browser_action_started", message=f"Browser action: {kind} — {str(plan.get('name') or plan.get('value') or plan.get('text') or '')[:100]}", action=kind, url=self.browser.page.url, plan={k: plan.get(k) for k in ("action", "by", "value", "name", "option", "operation") if k in plan})
                 phase=time.perf_counter(); result=self._execute_action_with_recovery(plan)
                 timings['action_seconds'].append(round(time.perf_counter()-phase,3))
+                self.computer._event("browser_action_result", message=f"Browser action {'succeeded' if result.get('ok') is not False else 'failed'}: {kind}", action=kind, ok=result.get("ok") is not False, result_summary=str(result.get("error") or result.get("text") or "verified")[:220], url=self.browser.page.url)
                 if result.get('ok') is False:
                     failed_action_signatures[signature] = failed_action_signatures.get(signature, 0) + 1
                     if failed_action_signatures[signature] >= 2:
