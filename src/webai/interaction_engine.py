@@ -64,7 +64,8 @@ class InteractionEngine:
                 operation: str | None = None, target: Any = None,
                 steps: int = 1, path: str | None = None,
                 target_by: str | None = None, target_value: str | None = None,
-                target_name: str | None = None, key: str | None = None,\n                dialog_action: str | None = None, prompt_text: str | None = None) -> dict:
+                target_name: str | None = None, key: str | None = None,
+                dialog_action: str | None = None, prompt_text: str | None = None) -> dict:
         """Execute a supported interaction and return verification evidence."""
         action = str(action or "").strip().lower()
         before_url = self.page.url
