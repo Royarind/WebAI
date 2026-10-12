@@ -97,9 +97,14 @@ class ComputerUse:
         query = str(query or "").strip().lower()
         if not query:
             raise ValueError("Search query cannot be empty.")
-        results, scanned = [], 0
+        results, scanned, visited_folders = [], 0, 0
+        self._event("computer_step", message=f"Searching accessible filesystem roots for: {query}", action="filesystem_search_started", query=query)
         for root in self.roots:
+            self._event("computer_step", message=f"Scanning root: {root}", action="filesystem_root_started", root=str(root))
             for folder, dirs, files in os.walk(root, followlinks=False, onerror=lambda _error: None):
+                visited_folders += 1
+                if visited_folders % 100 == 0:
+                    self._event("computer_step", message=f"Search progress: visited {visited_folders} folders and scanned {scanned} files", action="filesystem_search_progress", folders=visited_folders, files=scanned)
                 # Avoid following symlinks while searching across broad filesystem roots.
                 dirs[:] = [d for d in dirs if not (Path(folder) / d).is_symlink()]
                 for name in files:
