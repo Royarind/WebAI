@@ -432,7 +432,7 @@ class Agent:
                             'url': self.browser.page.url if kind == 'read_text' else None,
                             'query': plan.get('query') or plan.get('text') or plan.get('value'),
                             'path': result.get('path'),
-                            'result': compact_result if 'compact_result' in locals() else result,
+                            'result': _compact_result(result),
                         }
                         objective_ledger.add_evidence(evidence_id, evidence_record)
                 post_profile_filled=autofill_known_profile(self.browser.page)
@@ -562,7 +562,7 @@ class Agent:
         if browser_requested:
             return None
 
-        local_requested = any(term in low for term in ("local file", "local files", "my files", "desktop files", "folder", "file on my computer", "documents on my computer"))
+        local_requested = any(term in low for term in ("local file", "local files", "my files", "my documents", "local documents", "desktop files", "my desktop", "search my computer", "folder", "file on my computer", "documents on my computer"))
         outlook_requested = any(term in low for term in ("outlook", "inbox", "my emails", "my email", "email messages", "mailbox"))
         if not local_requested and not outlook_requested:
             return None
