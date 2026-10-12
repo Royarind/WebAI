@@ -252,7 +252,7 @@ class Agent:
             intervention=detect_intervention(self.browser.page, task=task, overlays=obs.get('overlays'))
             if intervention and intervention.get('type') == 'contact_input_required' and {'phone','email'}.intersection(profile_filled):
                 intervention=None
-            messages=[{'role':'user','content':json.dumps({'goal':task,'observation':obs},ensure_ascii=False)}]
+            messages=[{'role':'user','content':json.dumps({'goal':task,'task_plan':task_plan.snapshot(),'evidence_store':evidence_store.snapshot(),'observation':obs},ensure_ascii=False)}]
             failed_action_signatures = {}
             progress = TaskProgress(task)
             task_plan = TaskPlan(task)
