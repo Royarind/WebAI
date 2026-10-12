@@ -54,3 +54,20 @@ def test_compact_elements_preserves_current_form_values_and_checked_state():
 
     assert compact[0]["value"] == "Alex Morgan"
     assert compact[0]["checked"] is False
+
+
+
+def test_normalize_navigation_url_strips_markdown_link_wrapper():
+    from webai.agent import _normalize_navigation_url
+
+    assert _normalize_navigation_url(
+        "[https://playwright.dev/python/docs/intro](https://playwright.dev/python/docs/intro)"
+    ) == "https://playwright.dev/python/docs/intro"
+
+
+def test_normalize_navigation_url_rejects_non_http_urls():
+    import pytest
+    from webai.agent import _normalize_navigation_url
+
+    with pytest.raises(ValueError):
+        _normalize_navigation_url("javascript:alert(1)")
