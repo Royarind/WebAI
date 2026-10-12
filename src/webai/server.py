@@ -55,22 +55,6 @@ pre{white-space:pre-wrap;background:#f4f4f4;padding:14px;border-radius:8px;overf
 <pre id="live">Waiting for computer-use activity…</pre>
 <pre id="out">Ready.</pre>
 <script>
-let lastEventId=0;
-let eventPoller=null;
-async function pollComputerEvents(){
- try{
-   const r=await fetch("/api/events?after="+lastEventId);
-   const data=await r.json();
-   if(data.events&&data.events.length){
-     const live=document.querySelector("#live");
-     for(const ev of data.events){
-       lastEventId=Math.max(lastEventId,ev.id||0);
-       live.textContent += (live.textContent==="Waiting for computer-use activity…"?"":"\\n")+"["+new Date(ev.timestamp*1000).toLocaleTimeString()+"] "+(ev.message||ev.kind||"Computer event");
-     }
-     live.scrollTop=live.scrollHeight;
-   }
- }catch(e){}
-}
 function showResult(data){
  const out=document.querySelector('#out');
  out.textContent=JSON.stringify(data,null,2);
