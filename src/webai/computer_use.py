@@ -21,14 +21,25 @@ except ImportError:  # optional dependency; filesystem tools remain available
 
 
 class ComputerUse:
-    """Local computer tools with root confinement and explicit destructive approval."""
+    """Local computer tools across accessible filesystem locations.
+
+    OS permissions still apply. Delete operations require separate explicit approval.
+    """
 
     def __init__(self, roots: list[str | Path] | None = None, *, event_sink=None):
+        # Optional WEBAI_FILE_ROOTS narrows search roots; otherwise discover all drives.
         raw = roots if roots is not None else [
             item.strip().strip('"')
             for item in os.getenv("WEBAI_FILE_ROOTS", "").split(os.pathsep)
             if item.strip()
         ]
+        if roots is None and not raw:
+            if os.name == "nt":
+                import string
+                raw = [f"{drive}:\\" for drive in string.ascii_uppercase
+                       if os.path.exists(f"{drive}:\\")]
+            else:
+                raw = ["/"]
         self.roots = [Path(item).expanduser().resolve() for item in raw
                       if Path(item).expanduser().exists() and Path(item).expanduser().is_dir()]
         self.event_sink = event_sink
@@ -53,27 +64,25 @@ class ComputerUse:
 
     def _resolve(self, value: str | Path, *, allow_missing: bool = False) -> Path:
         path = Path(value).expanduser()
-        # Relative paths are interpreted under the first configured root only.
+        # Relative paths resolve from the current working directory. Absolute paths
+        # can target any drive/folder; normal OS permissions remain in force.
         if not path.is_absolute():
-            if not self.roots:
-                raise ValueError("Configure WEBAI_FILE_ROOTS before using filesystem tools.")
-            path = self.roots[0] / path
-        path = path.resolve(strict=not allow_missing)
-        if not any(path == root or root in path.parents for root in self.roots):
-            raise PermissionError("Path is outside configured WEBAI_FILE_ROOTS.")
-        return path
+            path = Path.cwd() / path
+        return path.resolve(strict=not allow_missing)
 
     def search(self, query: str, *, limit: int = 30) -> dict[str, Any]:
         query = str(query or "").strip().lower()
         if not query:
             raise ValueError("Search query cannot be empty.")
         results, scanned = [], 0
-        ignored = {".git", ".venv", "venv", "node_modules", "__pycache__", "AppData", "Windows"}
         for root in self.roots:
-            for folder, dirs, files in os.walk(root, followlinks=False):
-                dirs[:] = [d for d in dirs if d not in ignored]
+            for folder, dirs, files in os.walk(root, followlinks=False, onerror=lambda _error: None):
+                # Avoid following symlinks while searching across broad filesystem roots.
+                dirs[:] = [d for d in dirs if not (Path(folder) / d).is_symlink()]
                 for name in files:
                     path = Path(folder) / name
+                    if path.is_symlink():
+                        continue
                     scanned += 1
                     name_match = query in name.lower()
                     snippet = ""
@@ -150,6 +159,8 @@ class ComputerUse:
         target = self._resolve(path)
         if not target.exists():
             raise FileNotFoundError(str(target))
+        if target == Path(target.anchor):
+            raise PermissionError("Deleting a filesystem or drive root is not allowed.")
         token = uuid.uuid4().hex
         self.pending_approvals[token] = {"operation": "delete", "path": str(target)}
         self._event("approval_required", operation="delete", path=str(target), approval_id=token)
@@ -165,6 +176,8 @@ class ComputerUse:
             self._event("operation_rejected", operation="delete", path=request["path"])
             return {"ok": True, "deleted": False, "cancelled": True}
         target = self._resolve(request["path"])
+        if target == Path(target.anchor):
+            raise PermissionError("Deleting a filesystem or drive root is not allowed.")
         if target.is_dir():
             shutil.rmtree(target)
         else:
