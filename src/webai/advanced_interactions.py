@@ -95,7 +95,7 @@ def _set_date(engine, by: str, value: str, name: str | None, target: Any,
             ("[data-date]", raw), ("[data-value]", raw), ("[aria-label]", label),
         ):
             try:
-                candidates.append((context.locator(f'{selector}={json.dumps(selector_value)}'), selector))
+                candidates.append((context.locator(f'[{selector.strip("[]")}={json.dumps(selector_value)}]'), selector))
             except Exception:
                 pass
         for role in ("button", "gridcell", "option", "link"):
