@@ -103,6 +103,10 @@ def _recover_locator(page, by, value, name, action):
         else:
             original_error = LookupError("The requested locator did not resolve uniquely.")
     except (LookupError, ValueError) as first_error:
+        # Ambiguity is evidence that more than one plausible target exists, not a
+        # stale locator. Preserve the diagnostic and require a more specific target.
+        if isinstance(first_error, ValueError) and "ambiguous" in str(first_error).lower():
+            raise
         original_error = first_error
     # Preserve the established DOM-intelligence recovery for stale CSS/XPath
     # selectors. Accessible-role fallback is specifically for semantic locator
