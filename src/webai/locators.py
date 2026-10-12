@@ -65,12 +65,19 @@ _INVENTORY_SCRIPT = r"""(limit) => {
     return 5;
   };
   all.sort((a, b) => priority(a) - priority(b));
-  return all.slice(0, limit).map((el, i) => ({
-    index: i, tag: el.tagName.toLowerCase(), type: el.getAttribute('type') || '',
+  return all.slice(0, limit).map((el, i) => {
+    const type = (el.getAttribute('type') || '').toLowerCase();
+    const sensitive = ['password', 'hidden'].includes(type) ||
+      /password|one-time-code|cc-number|cc-csc/i.test(el.getAttribute('autocomplete') || '') ||
+      /password|secret|token|cvv|cvc|card.?number|security.?code/i.test(
+        (el.getAttribute('name') || '') + ' ' + (el.id || '')
+      );
+    return {
+    index: i, tag: el.tagName.toLowerCase(), type,
     role: el.getAttribute('role') || '', name: label(el).slice(0, 160), id: el.id || '',
     testId: el.getAttribute('data-testid') || '', placeholder: el.getAttribute('placeholder') || '',
     href: el.tagName === 'A' ? el.href : '',
-    value: ('value' in el ? String(el.value || '') : '').slice(0, 180),
+    value: sensitive ? '[redacted]' : (type === 'file' ? Array.from(el.files || []).map(f => f.name).join(', ') : ('value' in el ? String(el.value || '') : '')).slice(0, 180),
     checked: ('checked' in el ? !!el.checked : undefined),
     selected: ('selected' in el ? !!el.selected : undefined),
     ariaChecked: el.getAttribute('aria-checked') || '',
