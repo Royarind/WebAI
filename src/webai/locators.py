@@ -26,7 +26,17 @@ def make_locator(page_or_frame, by: str, value: str, name: str | None = None):
 
 
 _INVENTORY_SCRIPT = r"""(limit) => {
-  const selector = 'a,button,input,textarea,select,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[tabindex]:not([tabindex="-1"])';
+  const selector = [
+    'a[href]', 'button', 'input', 'textarea', 'select', 'option', 'summary',
+    '[contenteditable="true"]', '[tabindex]:not([tabindex="-1"])',
+    '[role="button"]', '[role="link"]', '[role="checkbox"]', '[role="radio"]',
+    '[role="combobox"]', '[role="listbox"]', '[role="option"]', '[role="menu"]',
+    '[role="menuitem"]', '[role="menuitemcheckbox"]', '[role="menuitemradio"]',
+    '[role="tab"]', '[role="switch"]', '[role="slider"]', '[role="spinbutton"]',
+    '[role="searchbox"]', '[role="textbox"]', '[role="treeitem"]', '[role="gridcell"]',
+    '[role="row"]', '[role="columnheader"]', '[role="dialog"]', '[aria-haspopup]',
+    '[aria-expanded]', '[aria-pressed]', '[aria-selected]', '[data-testid]'
+  ].join(',');
   const visible = el => {
     const s = getComputedStyle(el), r = el.getBoundingClientRect();
     return s.visibility !== 'hidden' && s.display !== 'none' && r.width > 0 && r.height > 0;
@@ -51,7 +61,20 @@ _INVENTORY_SCRIPT = r"""(limit) => {
     href: el.tagName === 'A' ? el.href : '',
     value: ('value' in el ? String(el.value || '') : '').slice(0, 180),
     checked: ('checked' in el ? !!el.checked : undefined),
-    disabled: !!el.disabled,
+    selected: ('selected' in el ? !!el.selected : undefined),
+    ariaChecked: el.getAttribute('aria-checked') || '',
+    ariaSelected: el.getAttribute('aria-selected') || '',
+    ariaPressed: el.getAttribute('aria-pressed') || '',
+    ariaExpanded: el.getAttribute('aria-expanded') || '',
+    ariaHaspopup: el.getAttribute('aria-haspopup') || '',
+    ariaValueNow: el.getAttribute('aria-valuenow') || '',
+    min: el.getAttribute('min') || '',
+    max: el.getAttribute('max') || '',
+    step: el.getAttribute('step') || '',
+    disabled: !!el.disabled || el.getAttribute('aria-disabled') === 'true',
+    required: !!el.required || el.getAttribute('aria-required') === 'true',
+    multiple: !!el.multiple,
+    selectedOptions: el.tagName === 'SELECT' ? [...el.selectedOptions].map(o => o.label).slice(0, 12) : [],
     inShadowRoot: !!el.getRootNode().host
   }));
 }"""
