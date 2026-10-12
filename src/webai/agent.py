@@ -9,6 +9,7 @@ from .interventions import detect_intervention, intervention_for_status
 from .profile import autofill_known_profile
 from .task_planning import TaskPlan, EvidenceStore, verify_deliverable
 from .intent_engine import assess_intent, next_step_guidance
+from .orchestration import CapabilityRegistry, ObjectiveLedger
 
 import re
 
@@ -259,8 +260,10 @@ class Agent:
             task_plan = TaskPlan(task)
             evidence_store = EvidenceStore()
             intent_model = assess_intent(task)
+            capability_registry = CapabilityRegistry()
+            objective_ledger = ObjectiveLedger(intent_model.get("objectives", []))
             progress.record_navigation(self.browser.page.url)
-            messages=[{'role':'user','content':json.dumps({'goal':task,'intent_model':intent_model,'next_step_guidance':next_step_guidance(intent_model, observation={'url':self.browser.page.url, 'title':self.browser.page.title()}),'task_plan':task_plan.snapshot(),'evidence_store':evidence_store.snapshot(),'observation':obs},ensure_ascii=False)}]
+            messages=[{'role':'user','content':json.dumps({'goal':task,'intent_model':intent_model,'capabilities':capability_registry.for_domains(intent_model.get('likely_tool_domains', [])),'objective_ledger':objective_ledger.snapshot(),'next_step_guidance':next_step_guidance(intent_model, observation={'url':self.browser.page.url, 'title':self.browser.page.title()}),'task_plan':task_plan.snapshot(),'evidence_store':evidence_store.snapshot(),'observation':obs},ensure_ascii=False)}]
             failed_action_signatures = {}
             if intervention:
                 status='needs_input'; summary=intervention.get('reason', 'Human intervention is required.')
@@ -304,6 +307,20 @@ class Agent:
                     break
                 timings['planning_seconds'].append(round(time.perf_counter()-phase,3))
                 trace.append({'step':i+1,'plan':plan})
+                # Apply only evidence-referenced objective updates proposed by the planner.
+                # The ledger rejects unsupported completions and unmet dependencies.
+                for update in plan.get('objective_updates', []) if isinstance(plan.get('objective_updates'), list) else []:
+                    if not isinstance(update, dict):
+                        continue
+                    try:
+                        objective_ledger.update(
+                            str(update.get('id', '')),
+                            str(update.get('status', '')),
+                            evidence_ids=update.get('evidence_ids'),
+                            blocker=update.get('blocker'),
+                        )
+                    except (KeyError, ValueError):
+                        continue
                 kind=plan['action']
                 if kind == 'navigate':
                     try:
@@ -392,6 +409,10 @@ class Agent:
                             locator={'by':plan.get('by'),'value':plan.get('value')},
                             text=result.get('text',''),
                         )
+                        current_evidence = evidence_store.snapshot()
+                        if current_evidence:
+                            evidence_id = f"evidence_{len(current_evidence)}"
+                            objective_ledger.add_evidence(evidence_id, current_evidence[-1])
                 post_profile_filled=autofill_known_profile(self.browser.page)
                 phase=time.perf_counter()
                 compact_result=_compact_result(result)
@@ -415,6 +436,13 @@ class Agent:
                     'updated_observation':observation,
                     'task_progress':progress.snapshot(),
                     'intent_model':intent_model,
+                    'capabilities':capability_registry.for_domains(intent_model.get('likely_tool_domains', [])),
+                    'objective_ledger':objective_ledger.snapshot(),
+                    'planner_contract':(
+                        'Return objective_updates as a list when progress changes. Each update must use a real objective id from objective_ledger. '
+                        'Statuses are pending, in_progress, blocked, completed. For completed, provide evidence_ids already present in objective_ledger.evidence. '
+                        'Never invent evidence IDs. Do not mark an objective complete merely because an action ran; require evidence that its outcome was achieved.'
+                    ),
                     'next_step_guidance':next_step_guidance(
                         intent_model,
                         observation={'url':self.browser.page.url, 'title':self.browser.page.title(), 'elements':observation.get('elements', [])},
