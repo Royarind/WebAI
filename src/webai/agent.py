@@ -526,7 +526,7 @@ class Agent:
         if kind=='navigate': return self.browser.open(plan['value'])
         if kind=='scroll': return self.browser.scroll(plan.get('value','down'), plan.get('text',650))
         if kind=='read_text': return {'ok':True,'text':self.browser.text(plan['by'],plan['value'],plan.get('name'))}
-        if kind=='click': return self.browser.click(plan['by'],plan['value'],plan.get('name'))
+        if kind=='click': return self.browser.interact('click', by=plan['by'], value=plan['value'], name=plan.get('name'), dialog_action=plan.get('dialog_action'), prompt_text=plan.get('prompt_text'))
         if kind=='fill': return self.browser.fill(plan['by'],plan['value'],plan['text'],plan.get('name'))
         if kind=='select': return self.browser.select(plan['by'],plan['value'],plan['option'],plan.get('name'))
         if kind=='check': return self.browser.check(plan['by'],plan['value'],plan.get('name'),bool(plan.get('checked',True)))
@@ -538,7 +538,7 @@ class Agent:
                 checked=plan.get('checked', True), operation=plan.get('operation'),
                 target=plan.get('target'), steps=plan.get('steps', 1), path=plan.get('path'),
                 target_by=plan.get('target_by'), target_value=plan.get('target_value'),
-                target_name=plan.get('target_name'), key=plan.get('key')
+                target_name=plan.get('target_name'), key=plan.get('key'), dialog_action=plan.get('dialog_action'), prompt_text=plan.get('prompt_text')
             )
         if kind == 'download':
             return self.browser.interact(
