@@ -94,12 +94,23 @@ def test_custom_dropdown_choose_recovers_when_trigger_is_a_button():
         browser = p.chromium.launch()
         page = browser.new_page()
         page.set_content("""
-            <button id="trip" aria-label="Round trip" onclick="
-              document.querySelector('#menu').innerHTML =
-                '<div role=\\"option\\" aria-selected=\\"false\\" onclick=\\"document.querySelector(\x27#trip\x27).textContent=\x27One way\x27; document.querySelector(\x27#trip\x27).setAttribute(\x27aria-label\x27,\x27One way\x27); this.setAttribute(\x27aria-selected\x27,\x27true\x27)\\">One way</div>';
-            ">Round trip</button>
+            <button id="trip" aria-label="Round trip">Round trip</button>
             <div id="menu"></div>
         """)
+        page.locator("#trip").evaluate("""el => {
+            el.onclick = () => {
+                const option = document.createElement('div');
+                option.setAttribute('role', 'option');
+                option.setAttribute('aria-selected', 'false');
+                option.textContent = 'One way';
+                option.onclick = () => {
+                    el.textContent = 'One way';
+                    el.setAttribute('aria-label', 'One way');
+                    option.setAttribute('aria-selected', 'true');
+                };
+                document.querySelector('#menu').replaceChildren(option);
+            };
+        }""")
         result = operate_control(
             page, "role", "combobox", "choose", target="One way", name="Round trip"
         )
