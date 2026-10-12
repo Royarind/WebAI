@@ -59,21 +59,85 @@ def locate(page, by, value, name=None):
 
 
 def _recover_locator(page, by, value, name, action):
-    """Conservative locator healing: only use explicit accessible name as fallback."""
+    """Resolve a unique target and recover from role/strategy mismatches using evidence.
+
+    Fallback is attempted for every locator strategy, including a failed role locator.
+    Candidates must be visible and enabled. If multiple distinct elements remain,
+    fail with diagnostics rather than choosing the first match.
+    """
     try:
-        return locate(page, by, value, name), None
+        locator = locate(page, by, value, name)
+        if locator.count() == 1:
+            return locator, None
     except (LookupError, ValueError) as first_error:
-        if name and by != "role":
-            for role in ("button", "link", "checkbox", "radio", "textbox", "combobox"):
-                try:
-                    candidate = make_locator(page, "role", role, name)
-                    if candidate.count() == 1:
-                        return candidate, {"from": {"by": by, "value": value},
-                                           "to": {"by": "role", "value": role, "name": name},
-                                           "reason": str(first_error)}
-                except Exception:
+        original_error = first_error
+    else:
+        original_error = LookupError("The requested locator did not resolve uniquely.")
+    if not name:
+        raise original_error
+
+    roles = ("button", "link", "checkbox", "radio", "textbox", "searchbox",
+             "combobox", "listbox", "option", "menuitem", "tab", "switch",
+             "slider", "spinbutton")
+    contexts = [page] + [frame for frame in page.frames if frame != page.main_frame]
+    candidates, diagnostics = {}, []
+    for context_index, context in enumerate(contexts):
+        for role in roles:
+            try:
+                candidate = context.get_by_role(role, name=name, exact=True)
+                count = candidate.count()
+                if count != 1:
+                    if count:
+                        diagnostics.append({"role": role, "matches": count, "context": context_index})
                     continue
-        raise first_error
+                if not candidate.is_visible() or candidate.is_disabled():
+                    diagnostics.append({"role": role, "matches": count, "visible": candidate.is_visible(),
+                                        "disabled": candidate.is_disabled(), "context": context_index})
+                    continue
+                key = f"{context_index}:" + candidate.evaluate("""el => {
+                    const parts = [];
+                    while (el && el.nodeType === 1) {
+                      let index = 0, sibling = el;
+                      while ((sibling = sibling.previousElementSibling)) index++;
+                      parts.unshift(index);
+                      el = el.parentElement;
+                    }
+                    return parts.join('/');
+                }""")
+                candidates[key] = (candidate, {"strategy": "accessible_role", "role": role,
+                                                "context": context_index})
+            except Exception:
+                continue
+        try:
+            candidate = context.get_by_text(name, exact=True)
+            count = candidate.count()
+            if count == 1 and candidate.is_visible():
+                key = f"{context_index}:" + candidate.evaluate("""el => {
+                    const parts = [];
+                    while (el && el.nodeType === 1) {
+                      let index = 0, sibling = el;
+                      while ((sibling = sibling.previousElementSibling)) index++;
+                      parts.unshift(index);
+                      el = el.parentElement;
+                    }
+                    return parts.join('/');
+                }""")
+                candidates[key] = (candidate, {"strategy": "exact_text", "context": context_index})
+            elif count:
+                diagnostics.append({"strategy": "exact_text", "matches": count, "context": context_index})
+        except Exception:
+            pass
+    if len(candidates) == 1:
+        candidate, strategy = next(iter(candidates.values()))
+        return candidate, {"from": {"by": by, "value": value, "name": name},
+                           "to": strategy, "reason": str(original_error)}
+    if len(candidates) > 1:
+        raise ValueError(
+            f"Could not safely recover {action} target {name!r}: {len(candidates)} distinct visible "
+            f"elements match. Inspect the current page and specify a unique target. "
+            f"Additional matches: {json.dumps(diagnostics[:12], ensure_ascii=False)}"
+        ) from original_error
+    raise original_error
 
 
 def _evidence(page, action: str, exc: Exception) -> dict:
