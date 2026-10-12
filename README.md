@@ -187,3 +187,17 @@ Configure `WEBAI_FILE_ROOTS` to the specific folders the agent is permitted to a
 The optional visual-control layer currently provides screenshot, click, pointer move, key press, hotkey and type primitives through PyAutoGUI. It is coordinate-based, so the agent must inspect a screenshot and verify the result; it is not equivalent to native accessibility-tree support. macOS may require Accessibility and Screen Recording permissions. Linux desktop sessions may require a supported graphical session and display backend.
 
 **Implementation boundary:** this is the initial computer-use toolkit and action-layer integration, not yet a complete OS-control product. The dashboard does not yet stream computer-use events live, provide an approval dialog for deletion, or guarantee that every pure desktop task bypasses browser initialization. Office document formats, clipboard APIs, native app discovery/accessibility, calendar integration, and end-to-end approval UX remain future work. Do not assume those capabilities are active merely because the tool primitives exist.
+
+## Windows one-click updater and launcher
+
+Use the repository's `Start-WebAI.ps1` script instead of manually running `git pull` and `pip install` after every code change:
+
+1. Close the currently running WebAI server terminal.
+2. In File Explorer, right-click `Start-WebAI.ps1` and choose **Run with PowerShell**, or run it from PowerShell:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\Start-WebAI.ps1
+   ```
+3. The script creates `.venv` if missing, checks for GitHub updates, fast-forwards the local checkout when there are no uncommitted changes, installs/updates WebAI plus the `computer-use` extra, and starts the dashboard at `http://127.0.0.1:8765`.
+4. Keep the PowerShell window open while using WebAI.
+
+The script deliberately does **not** overwrite local uncommitted work. If local changes exist, it skips `git pull` and explains why. If port 8765 is already occupied, it asks before stopping the process. Dependency installation still runs automatically when the launcher is run; it is safe to rerun when no code changes are available.
