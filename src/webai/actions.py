@@ -222,12 +222,20 @@ def fill(page, by, value, text, name=None, timeout_ms=8000):
     locator, healed = _recover_locator(page, by, value, name, "fill")
     try:
         locator.fill(text, timeout=timeout_ms)
-        actual = locator.input_value(timeout=timeout_ms)
-        verified = actual == text
+        meta = locator.evaluate("""el => ({
+          tag: el.tagName.toLowerCase(),
+          contenteditable: el.isContentEditable,
+          value: ('value' in el) ? String(el.value) : null,
+          text: el.isContentEditable ? (el.innerText || el.textContent || '') : null
+        })""")
+        actual = meta["value"] if meta["value"] is not None else meta["text"]
+        verified = str(actual or "") == str(text)
         if not verified:
-            raise RuntimeError("Post-fill verification failed: input value differs from requested text.")
+            raise RuntimeError(
+                f"Post-fill verification failed: expected {text!r}, observed {actual!r}."
+            )
         return {"ok": True, "action": "fill", "locator": {"by": by, "value": value, "name": name},
-                "healed": healed, "verified": verified}
+                "healed": healed, "verified": verified, "observed_value": actual}
     except Exception as exc:
         evidence = _evidence(page, "fill", exc)
         raise RuntimeError(str(evidence)) from exc
