@@ -227,7 +227,40 @@ def operate_control(page, by, value, operation, target=None, name=None, steps=1,
     allowed = {"set_value", "choose", "increment", "decrement", "press"}
     if operation not in allowed:
         raise ValueError(f"Unsupported control operation {operation!r}; choose from {sorted(allowed)}.")
-    locator, healed = _recover_locator(page, by, value, name, operation)
+    try:
+        locator, healed = _recover_locator(page, by, value, name, operation)
+    except (LookupError, ValueError) as first_error:
+        # Google Flights and many modern sites expose custom dropdown triggers
+        # as buttons, even when the planner describes them as comboboxes.
+        # For a choose operation only, try a small, explicit role fallback set.
+        if operation != "choose" or not name:
+            raise
+        locator = None
+        fallback_errors = []
+        for role in ("button", "combobox", "listbox"):
+            try:
+                candidate = page.get_by_role(role, name=name, exact=True)
+                if candidate.count() == 1 and candidate.is_visible() and not candidate.is_disabled():
+                    locator = candidate
+                    break
+                fallback_errors.append(f"{role}: {candidate.count()} match(es)")
+            except Exception as exc:
+                fallback_errors.append(f"{role}: {type(exc).__name__}")
+        if locator is None:
+            try:
+                candidate = page.get_by_text(name, exact=True)
+                if candidate.count() == 1 and candidate.is_visible():
+                    locator = candidate
+            except Exception:
+                pass
+        if locator is None:
+            raise LookupError(
+                f"Could not uniquely locate custom dropdown {name!r}. "
+                f"Original error: {first_error}. Fallbacks: {'; '.join(fallback_errors)}"
+            ) from first_error
+        healed = {"from": {"by": by, "value": value, "name": name},
+                  "to": {"strategy": "role_fallback", "name": name},
+                  "reason": "The requested custom dropdown was not exposed under the supplied role."}
     _one(locator, operation)
     if not locator.is_visible():
         raise ValueError("Target control is not visible. Scroll it into view and inspect again.")
