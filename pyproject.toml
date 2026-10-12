@@ -12,7 +12,6 @@ dependencies = ["playwright>=1.48,<2", "typer>=0.12,<1", "rich>=13.7,<15", "pyth
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<9"]
-computer-use = ["pyautogui>=0.9.54,<1"]
 
 [project.scripts]
 webai = "webai.cli:app"

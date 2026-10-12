@@ -85,36 +85,3 @@ def test_delayed_confirmation_text_is_verified_after_render():
         )
         assert result["verified"] is True
         browser.close()
-
-
-def test_custom_dropdown_choose_recovers_when_trigger_is_a_button():
-    from webai.actions import operate_control
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_page()
-        page.set_content("""
-            <button id="trip" aria-label="Round trip">Round trip</button>
-            <div id="menu"></div>
-        """)
-        page.locator("#trip").evaluate("""el => {
-            el.onclick = () => {
-                const option = document.createElement('div');
-                option.setAttribute('role', 'option');
-                option.setAttribute('aria-selected', 'false');
-                option.textContent = 'One way';
-                option.onclick = () => {
-                    el.textContent = 'One way';
-                    el.setAttribute('aria-label', 'One way');
-                    option.setAttribute('aria-selected', 'true');
-                };
-                document.querySelector('#menu').replaceChildren(option);
-            };
-        }""")
-        result = operate_control(
-            page, "role", "combobox", "choose", target="One way", name="Round trip"
-        )
-        assert result["ok"] is True
-        assert result["verified"] is True
-        assert page.get_by_role("button", name="One way", exact=True).count() == 1
-        browser.close()

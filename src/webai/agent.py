@@ -8,12 +8,8 @@ from .locators import overlay_inventory
 from .interventions import detect_intervention, intervention_for_status
 from .profile import autofill_known_profile
 from .task_planning import TaskPlan, EvidenceStore, verify_deliverable
-from .intent_engine import assess_intent, next_step_guidance
-from .orchestration import CapabilityRegistry, ObjectiveLedger, Capability
-from .connectors import LocalFileConnector, OutlookGraphConnector
 
 import re
-from .computer_use import ComputerUse
 
 BLOCKED=('purchase','buy now','pay now','payment','delete','remove account','send email','send message','submit order','place order','transfer money','publish','confirm booking','finalize order')
 NEGATION = re.compile(r"\b(?:do not|don't|dont|never|avoid|without|no need to|not to|not)\b", re.I)
@@ -48,8 +44,8 @@ def _requested_price_ceiling(task):
     """Extract a simple requested price ceiling so the agent cannot silently choose a lower band."""
     text = str(task or "")
     patterns = [
-        r"(?:below|under|less than|maximum|max(?:imum)? price(?: of)?|priced? at most)\s*(?:₹|rs\\.?\s*)?([\\d,]+)",
-        r"(?:₹|rs\\.?\s*)([\\d,]+)\s*(?:or less|maximum|max|and below)",
+        r"(?:below|under|less than|maximum|max(?:imum)? price(?: of)?|priced? at most)\\s*(?:₹|rs\\.?\\s*)?([\\d,]+)",
+        r"(?:₹|rs\\.?\\s*)([\\d,]+)\\s*(?:or less|maximum|max|and below)",
     ]
     for pattern in patterns:
         match = re.search(pattern, text, re.I)
@@ -67,7 +63,7 @@ def _filter_price_mismatch(task, plan):
     if ceiling is None or plan.get("action") not in {"click", "select"}:
         return None
     target = " ".join(str(plan.get(key, "")) for key in ("value", "name", "text", "option"))
-    match = re.search(r"(?:under|up to|upto|less than|below)\s*(?:₹|rs\\.?\s*)?([\\d,]+)", target, re.I)
+    match = re.search(r"(?:under|up to|upto|less than|below)\\s*(?:₹|rs\\.?\\s*)?([\\d,]+)", target, re.I)
     if not match:
         return None
     try:
@@ -208,103 +204,14 @@ def _compact_result(result):
         compact["elements"] = _compact_elements(compact["elements"], 24)
     return compact
 
-def _enforce_google_flights_trip_type(task, current_url, plan):
-    """Deterministically convert repeated 'Round trip' clicks into a verified selection."""
-    if not isinstance(plan, dict):
-        return plan
-    if "google.com/travel/flights" not in str(current_url or "").lower():
-        return plan
-    if not re.search(r"\bone[ -]way\b", str(task or ""), re.I):
-        return plan
-    if plan.get("action") != "click":
-        return plan
-    target = " ".join(str(plan.get(key) or "") for key in ("value", "name", "text", "option"))
-    if not re.search(r"\bround\s*trip\b", target, re.I):
-        return plan
-    corrected = dict(plan)
-    corrected.update({
-        "action": "control",
-        "by": "role",
-        "value": "combobox",
-        "name": "Round trip",
-        "operation": "choose",
-        "target": "One way",
-        "reason": "Deterministic Google Flights recovery: select the requested trip type instead of clicking the trigger repeatedly.",
-    })
-    return corrected
-
 class Agent:
     """Bounded observe-plan-act-verify loop using a configurable chat model."""
     def __init__(self, browser=None, llm=None, memory=None):
         self.settings=get_settings(); self.browser=browser; self._browser_owned=False; self.llm=llm or LLMClient(); self.memory=memory or Memory(self.settings.memory_path)
-        self.computer = ComputerUse()
-
-    def _run_computer_only(self, task, url=None):
-        """Handle basic computer retrieval requests without launching a browser."""
-        if url:
-            return None
-        text = str(task or "").strip()
-        low = text.lower()
-        has_absolute_windows_path = bool(re.search(r"[A-Za-z]:\\", text))
-        is_file_read_request = any(word in low for word in ("read ", "open ", "summarize ", "summarise ", "inspect "))
-        if not has_absolute_windows_path and not any(word in low for word in ("computer", "local file", "local folder", "my files", "my computer", "filesystem", "drive", "desktop")):
-            return None
-        try:
-            if "capabilities" in low or "which drives" in low or "available drives" in low:
-                data = self.computer.capabilities()
-                summary = "Computer-use capabilities retrieved; access follows OS permissions."
-            elif has_absolute_windows_path and is_file_read_request:
-                path_match = re.search(r"""([A-Za-z]:\\[^"\r\n]*?\.[A-Za-z0-9]{1,10})""", text)
-                if not path_match:
-                    return {"status": "needs_input", "summary": "I detected a local file request but could not safely extract the full path. Quote the full path and retry.", "steps": [], "data": {}, "artifacts": [], "elapsed_seconds": 0, "url": None, "intervention": None}
-                target_path = path_match.group(1).strip().rstrip(" .!?,;")
-                self.computer._event("computer_step", message=f"Reading local file: {target_path}", action="file_read_started", path=target_path)
-                data = self.computer.read(target_path)
-                self.computer._event("computer_step", message=f"Read completed: {target_path}", action="file_read_complete", path=target_path)
-                content = data.get("text", "")
-                low_content = content.lower()
-                if "pip install" in low_content or "installation" in low_content or "install" in low_content:
-                    relevant = [line.strip() for line in content.splitlines() if any(term in line.lower() for term in ("install", "pip ", "python ", "requirements", "setup", "venv", "clone", "uvicorn"))]
-                    data["summary"] = "Installation-related lines found in the file:\\n" + "\\n".join(relevant[:30])
-                else:
-                    data["summary"] = content[:3000]
-                summary = f"Read local file successfully: {target_path}. The content and extracted summary are included in the result."
-            elif "search" in low or "find" in low or "look for" in low:
-                named_match = re.search(r'\b(?:named|called)\s+["\']?([^\s,;]+)', text, re.I)
-                match = named_match or re.search(r'\b(?:for|about|containing)\s+([^.!?,;\n]+)', text, re.I)
-                query = match.group(1).strip(" \"'") .rstrip(".!?") if match else ""
-                if not query:
-                    return None
-                self.computer._event("computer_step", message="Starting live computer-use search", action="search_start", query=query)
-                try:
-                    live_ui = self.computer.live_search_in_explorer(query)
-                except Exception as desktop_error:
-                    live_ui = {"ok": False, "available": False, "reason": f"{type(desktop_error).__name__}: {desktop_error}"}
-                    self.computer._event("computer_step", message=f"Live desktop interaction unavailable: {desktop_error}", action="desktop_unavailable")
-                data = self.computer.search(query)
-                data["live_desktop"] = live_ui
-                summary = f"Filesystem search completed: {data.get('count', 0)} result(s). Live Explorer interaction: {'initiated' if live_ui.get('ok') else 'unavailable'}."
-            else:
-                return None
-            return {"status": "completed", "summary": summary, "steps": [{"step": 1, "plan": {"action": "computer_use"}, "result": data}], "data": {"computer": data}, "artifacts": [], "elapsed_seconds": 0, "url": None, "intervention": None}
-        except Exception as exc:
-            return {"status": "failed", "summary": f"Computer-use operation failed: {type(exc).__name__}: {exc}", "steps": [], "data": {}, "artifacts": [], "elapsed_seconds": 0, "url": None, "intervention": None}
-
     def run(self, task, url=None):
         start=time.time(); perf_start=time.perf_counter(); artifacts=[]; trace=[]; status='failed'; summary=''; owns=False; pending_action=None; intervention=None
         timings={'browser_start_seconds':0.0,'url_discovery_seconds':0.0,'navigation_seconds':0.0,'initial_observation_seconds':0.0,'planning_seconds':[],'action_seconds':[],'post_action_observation_seconds':[],'unattributed_seconds':0.0}
         try:
-            # Route dedicated computer-use tasks before browser/connector setup.
-            computer_result = self._run_computer_only(task, url=url)
-            if computer_result is not None:
-                return computer_result
-            # Route pure local-file and Outlook retrieval tasks directly to their
-            # read-only connectors instead of opening an unrelated website first.
-            connector_result = self._run_connector_only(task, url=url)
-            if connector_result is not None:
-                status = connector_result["status"]
-                summary = connector_result["summary"]
-                return connector_result
             owns=self.browser is None
             if owns:
                 phase=time.perf_counter()
@@ -350,21 +257,8 @@ class Agent:
             progress = TaskProgress(task)
             task_plan = TaskPlan(task)
             evidence_store = EvidenceStore()
-            capability_registry = CapabilityRegistry()
-            self.local_files = LocalFileConnector()
-            self.outlook = OutlookGraphConnector(timeout=self.settings.timeout)
-            # Keep the ComputerUse instance created in __init__. The dashboard
-            # attaches its event_sink there; replacing it here silently disables
-            # live computer/browser activity streaming.
-            if self.local_files.available:
-                capability_registry.register(Capability("local_files", ("files", "office"), True, "read_only_search", "Search and read text files under configured roots."))
-            if self.outlook.available:
-                capability_registry.register(Capability("outlook", ("email",), True, "microsoft_graph_read_only", "Search Outlook messages via Microsoft Graph.", requires_approval=False))
-            available_domains = sorted({domain for item in capability_registry.snapshot()["available"] for domain in item["domains"]})
-            intent_model = assess_intent(task, available_capabilities=available_domains)
-            objective_ledger = ObjectiveLedger(intent_model.get("objectives", []))
             progress.record_navigation(self.browser.page.url)
-            messages=[{'role':'user','content':json.dumps({'goal':task,'intent_model':intent_model,'capabilities':capability_registry.for_domains(intent_model.get('likely_tool_domains', [])),'objective_ledger':objective_ledger.snapshot(),'next_step_guidance':next_step_guidance(intent_model, observation={'url':self.browser.page.url, 'title':self.browser.page.title()}),'task_plan':task_plan.snapshot(),'evidence_store':evidence_store.snapshot(),'observation':obs},ensure_ascii=False)}]
+            messages=[{'role':'user','content':json.dumps({'goal':task,'task_plan':task_plan.snapshot(),'evidence_store':evidence_store.snapshot(),'observation':obs},ensure_ascii=False)}]
             failed_action_signatures = {}
             if intervention:
                 status='needs_input'; summary=intervention.get('reason', 'Human intervention is required.')
@@ -408,25 +302,6 @@ class Agent:
                     break
                 timings['planning_seconds'].append(round(time.perf_counter()-phase,3))
                 trace.append({'step':i+1,'plan':plan})
-                # Apply only evidence-referenced objective updates proposed by the planner.
-                # The ledger rejects unsupported completions and unmet dependencies.
-                for update in plan.get('objective_updates', []) if isinstance(plan.get('objective_updates'), list) else []:
-                    if not isinstance(update, dict):
-                        continue
-                    try:
-                        objective_ledger.update(
-                            str(update.get('id', '')),
-                            str(update.get('status', '')),
-                            evidence_ids=update.get('evidence_ids'),
-                            blocker=update.get('blocker'),
-                        )
-                    except (KeyError, ValueError):
-                        continue
-                # Do not trust the model to obey the one-way dropdown rule.
-                # Normalize a repeated click on "Round trip" into a verified
-                # choose operation before computing loop signatures or execution.
-                plan = _enforce_google_flights_trip_type(task, self.browser.page.url, plan)
-                trace[-1]['plan'] = plan
                 kind=plan['action']
                 if kind == 'navigate':
                     try:
@@ -497,10 +372,8 @@ class Agent:
                     intervention={'type':'approval_required','title':'Approval required','reason':summary,'url':self.browser.page.url,'user_action':'Review the proposed action and explicitly approve it before execution.'}
                     break
                 if kind=='navigate' and not plan.get('value','').startswith(('http://','https://')): raise ValueError('Navigation must use http(s).')
-                self.computer._event("browser_action_started", message=f"Browser action: {kind} — {str(plan.get('name') or plan.get('value') or plan.get('text') or '')[:100]}", action=kind, url=self.browser.page.url, plan={k: plan.get(k) for k in ("action", "by", "value", "name", "option", "operation") if k in plan})
                 phase=time.perf_counter(); result=self._execute_action_with_recovery(plan)
                 timings['action_seconds'].append(round(time.perf_counter()-phase,3))
-                self.computer._event("browser_action_result", message=f"Browser action {'succeeded' if result.get('ok') is not False else 'failed'}: {kind}", action=kind, ok=result.get("ok") is not False, result_summary=str(result.get("error") or result.get("text") or "verified")[:220], url=self.browser.page.url)
                 if result.get('ok') is False:
                     failed_action_signatures[signature] = failed_action_signatures.get(signature, 0) + 1
                     if failed_action_signatures[signature] >= 2:
@@ -517,17 +390,6 @@ class Agent:
                             locator={'by':plan.get('by'),'value':plan.get('value')},
                             text=result.get('text',''),
                         )
-                    if kind in {'read_text', 'local_search', 'local_read', 'outlook_search'} and result.get('ok') is not False:
-                        registered = objective_ledger.snapshot().get('evidence', {})
-                        evidence_id = f"evidence_{len(registered) + 1}"
-                        evidence_record = {
-                            'action': kind,
-                            'url': self.browser.page.url if kind == 'read_text' else None,
-                            'query': plan.get('query') or plan.get('text') or plan.get('value'),
-                            'path': result.get('path'),
-                            'result': _compact_result(result),
-                        }
-                        objective_ledger.add_evidence(evidence_id, evidence_record)
                 post_profile_filled=autofill_known_profile(self.browser.page)
                 phase=time.perf_counter()
                 compact_result=_compact_result(result)
@@ -550,20 +412,6 @@ class Agent:
                     'execution_result':compact_result,
                     'updated_observation':observation,
                     'task_progress':progress.snapshot(),
-                    'intent_model':intent_model,
-                    'capabilities':capability_registry.for_domains(intent_model.get('likely_tool_domains', [])),
-                    'objective_ledger':objective_ledger.snapshot(),
-                    'planner_contract':(
-                        'Return objective_updates as a list when progress changes. Each update must use a real objective id from objective_ledger. '
-                        'Statuses are pending, in_progress, blocked, completed. For completed, provide evidence_ids already present in objective_ledger.evidence. '
-                        'Never invent evidence IDs. Do not mark an objective complete merely because an action ran; require evidence that its outcome was achieved.'
-                    ),
-                    'next_step_guidance':next_step_guidance(
-                        intent_model,
-                        observation={'url':self.browser.page.url, 'title':self.browser.page.title(), 'elements':observation.get('elements', [])},
-                        progress=progress.snapshot(),
-                        last_result=compact_result,
-                    ),
                     'instruction':(
                         'Update the task plan mentally against the original goal. Preserve extracted facts in the evidence ledger. '
                         'Do not revisit a URL or repeat a successful action unless you state a specific missing fact that requires it. '
@@ -646,79 +494,6 @@ class Agent:
             f'{summary} Live-page verification was inconclusive: {reason}'
         )
 
-    def _run_connector_only(self, task, *, url=None):
-        """Execute clearly app-specific retrieval tasks without launching a browser."""
-        if url or (self.browser is not None and self.browser.page is not None):
-            return None
-        low = task.lower()
-        browser_requested = any(term in low for term in ("website", "web page", "webpage", "browser", "online search", "open the site"))
-        if browser_requested:
-            return None
-
-        local_requested = any(term in low for term in ("local file", "local files", "my files", "my documents", "local documents", "desktop files", "my desktop", "search my computer", "folder", "file on my computer", "documents on my computer"))
-        outlook_requested = any(term in low for term in ("outlook", "inbox", "my emails", "my email", "email messages", "mailbox"))
-        if not local_requested and not outlook_requested:
-            return None
-
-        self.local_files = LocalFileConnector()
-        self.outlook = OutlookGraphConnector(timeout=self.settings.timeout)
-        results = {}
-        if local_requested:
-            path_match = re.search(r"""([A-Za-z]:\\[^"\r\n]*?\.[A-Za-z0-9]{1,10})""", task)
-            if not self.local_files.available:
-                results["local_files"] = {"ok": False, "error": "Local file search is not configured. Set WEBAI_FILE_ROOTS to permitted folders, separated by semicolons on Windows."}
-            elif path_match:
-                results["local_files"] = self.local_files.read(path_match.group(1).strip())
-            else:
-                query_match = re.search(r"\b(?:for|about|containing|related to|regarding|named|called)\s+(.+)$", task, re.I)
-                query = query_match.group(1).strip(" .!?\\\"'") if query_match else re.sub(
-                    r"\b(search|find|locate|look for|in|my|local|files?|folders?|documents?|on my computer|on my desktop|please)\b",
-                    " ", task, flags=re.I)
-                query = re.sub(r"\s+", " ", query).strip(" .!?")
-                results["local_files"] = self.local_files.search(query or task, limit=10)
-
-        if outlook_requested:
-            unread_only = any(term in low for term in ("unread", "not read"))
-            broad_briefing = any(term in low for term in ("summarize", "summary", "catch me up", "all relevant", "recent emails", "latest emails", "inbox"))
-            if not self.outlook.available:
-                results["outlook"] = {"ok": False, "error": "Outlook is not configured. Set WEBAI_OUTLOOK_ACCESS_TOKEN to a Microsoft Graph access token with Mail.Read permission."}
-            elif broad_briefing:
-                results["outlook"] = self.outlook.list_recent_messages(limit=15, unread_only=unread_only)
-            else:
-                query_match = re.search(r"\b(?:for|about|containing|related to|regarding)\s+(.+)$", task, re.I)
-                query = query_match.group(1).strip(" .!?\\\"'") if query_match else ""
-                if query:
-                    results["outlook"] = self.outlook.search_messages(query, limit=15, unread_only=unread_only)
-                else:
-                    results["outlook"] = self.outlook.list_recent_messages(limit=15, unread_only=unread_only)
-
-        failures = [name for name, result in results.items() if result.get("ok") is not True]
-        counts = {name: result.get("count", len(result.get("results", [])) if isinstance(result.get("results"), list) else 0)
-                  for name, result in results.items()}
-        if failures:
-            status = "needs_input"
-            summary = "Connector setup or access is needed: " + "; ".join(
-                f"{name}: {results[name].get('error', 'connector unavailable')}" for name in failures
-            )
-        else:
-            status = "completed"
-            summary = "Read-only retrieval completed. " + "; ".join(
-                f"{name}: {counts[name]} result(s)" for name in results
-            ) + ". Review the returned data before taking any consequential action."
-        return {
-            "status": status,
-            "summary": summary,
-            "steps": [{"step": i + 1, "plan": {"action": name}, "result": result}
-                      for i, (name, result) in enumerate(results.items())],
-            "data": results,
-            "artifacts": [],
-            "elapsed_seconds": 0,
-            "url": None,
-            "intervention": ({"type": "connector_configuration", "title": "Connector setup required",
-                              "reason": summary, "user_action": "Configure the connector and rerun the request."}
-                             if failures else None),
-        }
-
     def _execute_action_with_recovery(self, plan):
         """Convert an individual browser-action exception into planner feedback.
 
@@ -742,25 +517,6 @@ class Agent:
 
     def _act(self, plan):
         kind=plan['action']; page=self.browser.page
-        if kind == 'local_search':
-            return self.local_files.search(plan.get('query') or plan.get('text') or plan.get('value', ''),
-                                           limit=plan.get('limit', 10), extensions=plan.get('extensions'))
-        if kind == 'local_read':
-            return self.local_files.read(plan.get('path') or plan.get('value', ''),
-                                         max_chars=plan.get('max_chars', 12000))
-        if kind == 'outlook_search':
-            return self.outlook.search_messages(plan.get('query') or plan.get('text') or plan.get('value', ''),
-                                                limit=plan.get('limit', 10),
-                                                unread_only=bool(plan.get('unread_only', False)))
-        if kind == 'computer_search': return self.computer.search(plan.get('query') or plan.get('text') or plan.get('value', ''), limit=plan.get('limit', 30))
-        if kind == 'computer_read': return self.computer.read(plan.get('path') or plan.get('value', ''), max_chars=plan.get('max_chars', 20000))
-        if kind == 'computer_copy': return self.computer.copy(plan['source'], plan['destination'])
-        if kind == 'computer_move': return self.computer.move(plan['source'], plan['destination'])
-        if kind == 'computer_create_directory': return self.computer.create_directory(plan.get('path') or plan.get('value', ''))
-        if kind == 'computer_create_text_file': return self.computer.create_text_file(plan.get('path', ''), plan.get('text', ''), overwrite=bool(plan.get('overwrite', False)))
-        if kind == 'computer_delete': return self.computer.request_delete(plan.get('path') or plan.get('value', ''))
-        if kind == 'desktop_screenshot': return self.computer.screenshot(plan.get('path'))
-        if kind == 'desktop_action': return self.computer.desktop_action(plan.get('operation', ''), **(plan.get('arguments') or {}))
         if kind=='inspect': return {'ok':True,'elements':self.browser.inspect(180)}
         if kind=='status': return self.browser.status()
         if kind=='screenshot': return {'ok':True,'path':self.browser.screenshot(plan.get('path') or f'{self.settings.artifact_dir}/manual.png')}
