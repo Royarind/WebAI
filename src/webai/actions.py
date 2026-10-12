@@ -509,10 +509,8 @@ def operate_control(page, by, value, operation, target=None, name=None, steps=1,
                     f"Matches: {json.dumps(diagnostics[:10], ensure_ascii=False)}"
                 )
             option_locator, selected_role = next(iter(unique.values()))
-            option_locator.click(timeout=timeout_ms)
-            # Verify selected/checked state when exposed; otherwise require the
-            # trigger's accessible label/text to reflect the chosen value.
-            verified = False
+            # Do not toggle an already-selected item off in a multiselect.
+            selected_state = False
             try:
                 option_role = option_locator.get_attribute("role") or selected_role
                 selected_state = (
@@ -522,9 +520,19 @@ def operate_control(page, by, value, operation, target=None, name=None, steps=1,
                 )
                 if option_role in {"radio", "checkbox"}:
                     selected_state = selected_state or option_locator.is_checked()
-                verified = selected_state
             except Exception:
                 pass
+            trigger_value = ""
+            try:
+                trigger_value = locator.get_attribute("aria-valuetext") or locator.get_attribute("aria-label") or locator.inner_text()
+            except Exception:
+                pass
+            already_chosen = target_name.casefold() in str(trigger_value).casefold()
+            if not selected_state and not already_chosen:
+                option_locator.click(timeout=timeout_ms)
+            # Verify selected/checked state when exposed; otherwise require the
+            # trigger's accessible label/text to reflect the chosen value.
+            verified = bool(selected_state or already_chosen)
             try:
                 selected = locator.get_attribute("aria-valuetext") or locator.get_attribute("aria-label") or locator.inner_text()
                 verified = verified or target_name.casefold() in str(selected).casefold()
