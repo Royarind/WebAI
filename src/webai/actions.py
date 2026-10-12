@@ -16,24 +16,31 @@ def _one(locator, action: str):
 
 
 def locate(page, by, value, name=None):
-    """Find a unique match in the main page or one of its frames."""
+    """Find a unique match across the main page and all accessible child frames."""
     main = make_locator(page, by, value, name)
     main_count = main.count()
-    if main_count == 1:
-        return main
     frame_matches = []
+    frame_diagnostics = []
     for frame in page.frames:
         if frame == page.main_frame:
             continue
         try:
             loc = make_locator(frame, by, value, name)
-            if loc.count() == 1:
-                frame_matches.append(loc)
+            count = loc.count()
+            if count:
+                frame_diagnostics.append({"url": frame.url, "name": frame.name, "matches": count})
+            if count == 1:
+                frame_matches.append((loc, frame))
         except Exception:
             continue
-    if main_count == 0 and len(frame_matches) == 1:
-        return frame_matches[0]
-    if main_count > 1 or len(frame_matches) > 1 or (main_count == 1 and frame_matches):
+
+    total_unique_contexts = (1 if main_count == 1 else 0) + len(frame_matches)
+    frame_ambiguous = any(item["matches"] > 1 for item in frame_diagnostics)
+    if main_count == 1 and not frame_matches and not frame_ambiguous:
+        return main
+    if main_count == 0 and len(frame_matches) == 1 and not frame_ambiguous:
+        return frame_matches[0][0]
+    if main_count > 1 or frame_ambiguous or total_unique_contexts > 1:
         candidates = []
         try:
             candidates = main.evaluate_all("""els => els.slice(0, 6).map(el => ({
@@ -50,13 +57,14 @@ def locate(page, by, value, name=None):
         except Exception:
             pass
         raise ValueError(
-            f"Locator is ambiguous: main page matched {main_count} element(s), "
-            f"and {len(frame_matches)} child frame(s) had a unique match. "
-            f"Candidate details (up to 6): {json.dumps(candidates, ensure_ascii=False)}. "
+            f"Locator is ambiguous across the main page and frames: main page matched {main_count} "
+            f"element(s); child-frame matches: {json.dumps(frame_diagnostics[:8], ensure_ascii=False)}. "
+            f"Main-page candidate details: {json.dumps(candidates, ensure_ascii=False)}. "
             "Choose a unique visible, enabled target; do not retry with equivalent selector syntax."
         )
-    raise LookupError(f"No element matched locator for action (searched main page and {len(page.frames)-1} child frames).")
-
+    raise LookupError(
+        f"No element matched locator (searched main page and {len(page.frames)-1} child frames)."
+    )
 
 def _recover_locator(page, by, value, name, action):
     """Resolve a unique target and recover from role/strategy mismatches using evidence.
