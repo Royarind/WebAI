@@ -227,8 +227,8 @@ class Agent:
                 data = self.computer.capabilities()
                 summary = "Computer-use capabilities retrieved; access follows OS permissions."
             elif "search" in low or "find" in low or "look for" in low:
-                match = re.search(r"\b(?:for|about|containing|named)\s+(.+)$", text, re.I)
-                query = match.group(1).strip(" .!?") if match else ""
+                match = re.search(r'\b(?:for|about|containing|named)\s+["\']?([^.!?,;\n]+)', text, re.I)
+                query = match.group(1).strip(" .!?'\"") if match else ""
                 if not query:
                     return None
                 self.computer._event("computer_step", message="Starting live computer-use search", action="search_start", query=query)
