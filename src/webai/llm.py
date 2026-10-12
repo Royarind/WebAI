@@ -203,7 +203,7 @@ class LLMClient:
                         ]
                     if len(matches) == 1:
                         by = matches[0]
-                by = {"testid": "test_id", "data_test_id": "test_id", "accessible_name": "role", "css_selector": "css", "xpath_selector": "xpath"}.get(by, by)
+                by = {"visible_tex": "text", "css_selecto": "css", "testid": "test_id", "data_test_id": "test_id", "accessible_name": "role", "css_selector": "css", "xpath_selector": "xpath"}.get(by, by)
                 # Some models misuse "value" as a locator strategy for a named input.
                 # For fill only, treat this as placeholder only when a non-empty field target exists.
                 if by == "value" and action == "fill":
@@ -368,6 +368,8 @@ class LLMClient:
             try:
                 return self._parse_action(content)
             except (ValueError, json.JSONDecodeError) as exc:
+                if "unsupported action" in str(exc).lower():
+                    raise
                 if attempt == 2:
                     # Recover this common case deterministically from the initial
                     # observation instead of asking the user to do work the browser
