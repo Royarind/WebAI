@@ -220,9 +220,13 @@ def click(page, by, value, name=None, timeout_ms=3000):
     try:
         locator, healed = _recover_locator(page, by, value, name, "click")
     except (LookupError, ValueError) as locator_error:
-        # Only resolve a better target when the original locator did not resolve
-        # uniquely. Never use DOM intelligence to retry after a click timeout,
-        # because the original click may already have taken effect.
+        # An ambiguity is not a stale locator. Never ask the heuristic resolver
+        # to choose between two genuinely distinct controls across page/frames.
+        if isinstance(locator_error, ValueError) and "ambiguous" in str(locator_error).lower():
+            raise
+        # Only resolve a better target when the original locator did not resolve.
+        # Never use DOM intelligence to retry after a click timeout, because the
+        # original click may already have taken effect.
         if not name:
             raise
         from .sync_dom_intelligence import SyncDOMIntelligence
