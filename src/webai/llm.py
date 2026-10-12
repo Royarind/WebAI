@@ -203,7 +203,7 @@ class LLMClient:
                         ]
                     if len(matches) == 1:
                         by = matches[0]
-                by = {"visible_tex": "text", "css_selecto": "css", "testid": "test_id", "data_test_id": "test_id", "accessible_name": "role", "css_selector": "css", "xpath_selector": "xpath"}.get(by, by)
+                by = {"visible_tex": "text", "css_selecto": "css", "xpath_expressio": "xpath", "testid": "test_id", "data_test_id": "test_id", "accessible_name": "role", "css_selector": "css", "xpath_selector": "xpath"}.get(by, by)
                 # Some models misuse "value" as a locator strategy for a named input.
                 # For fill only, treat this as placeholder only when a non-empty field target exists.
                 if by == "value" and action == "fill":
