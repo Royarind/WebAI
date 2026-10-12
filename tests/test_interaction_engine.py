@@ -302,3 +302,17 @@ def test_select_action_routes_custom_dropdown_to_verified_choose_operation():
         assert result["verified"] is True
         assert page.get_by_role("button", name="One way", exact=True).count() == 1
         browser.close()
+
+
+
+def test_wait_for_hidden_and_detached_states_does_not_require_visible_match():
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content('<div id="hidden" hidden>Hidden</div>')
+        engine = InteractionEngine(page)
+        hidden = engine.perform("wait_for", by="css", value="#hidden", operation="hidden")
+        detached = engine.perform("wait_for", by="css", value="#already-gone", operation="detached")
+        assert hidden["verified"] is True
+        assert detached["verified"] is True
+        browser.close()
