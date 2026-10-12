@@ -142,7 +142,7 @@ def _activate_tab(engine, by: str, value: str, name: str | None) -> dict:
     panel_visible = False
     if panel_id:
         try:
-            panel = locator.page.locator("#" + panel_id)
+            panel = engine.page.locator("#" + panel_id)
             panel_visible = panel.count() == 1 and panel.is_visible()
         except Exception:
             pass
@@ -221,7 +221,7 @@ def _table_action(engine, row_text: str | None, control_name: str | None) -> dic
 def _validate_form(engine, by: str, value: str, name: str | None) -> dict:
     locator, healed = engine.resolve(by, value, name, "validate_form")
     meta = locator.evaluate("""form => {
-      const controls = Array.from(form.querySelectorAll('input,select,textarea,[contenteditable="true"]'));
+      const controls = Array.from(form.querySelectorAll('input,select,textarea'));
       const invalid = controls.filter(el => {
         if (el.disabled || el.type === 'hidden') return false;
         if (el.willValidate === false) return false;
