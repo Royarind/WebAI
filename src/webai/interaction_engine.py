@@ -65,13 +65,48 @@ class InteractionEngine:
                 steps: int = 1, path: str | None = None,
                 target_by: str | None = None, target_value: str | None = None,
                 target_name: str | None = None, key: str | None = None,
-                dialog_action: str | None = None, prompt_text: str | None = None) -> dict:
+                dialog_action: str | None = None, prompt_text: str | None = None,\n                x: float | None = None, y: float | None = None,\n                to_x: float | None = None, to_y: float | None = None) -> dict:
         """Execute a supported interaction and return verification evidence."""
         action = str(action or "").strip().lower()
         before_url = self.page.url
         before_title = self.page.title()
         if action == "observe":
             return {"ok": True, "action": "observe", "observation": self.observe()}
+        if action in {"click_at", "move_at", "drag_at"}:
+            if x is None or y is None:
+                raise ValueError(f"{action} requires numeric x and y coordinates from a fresh screenshot.")
+            viewport = self.page.evaluate("() => ({width: innerWidth, height: innerHeight})")
+            sx, sy = float(x), float(y)
+            if not (0 <= sx < viewport["width"] and 0 <= sy < viewport["height"]):
+                raise ValueError(f"Coordinates ({sx}, {sy}) are outside the current viewport {viewport}. Capture a fresh viewport screenshot.")
+            before = self.page.evaluate("""({x,y}) => {
+              const el = document.elementFromPoint(x,y);
+              return el ? {tag: el.tagName.toLowerCase(), role: el.getAttribute('role') || '',
+                label: el.getAttribute('aria-label') || '', text: (el.innerText || el.value || '').trim().slice(0,160)} : null;
+            }""", {"x": sx, "y": sy})
+            if action == "click_at":
+                self.page.mouse.click(sx, sy)
+            elif action == "move_at":
+                self.page.mouse.move(sx, sy)
+            else:
+                if to_x is None or to_y is None:
+                    raise ValueError("drag_at requires to_x and to_y destination coordinates.")
+                dx, dy = float(to_x), float(to_y)
+                if not (0 <= dx < viewport["width"] and 0 <= dy < viewport["height"]):
+                    raise ValueError(f"Destination coordinates ({dx}, {dy}) are outside viewport {viewport}.")
+                self.page.mouse.move(sx, sy)
+                self.page.mouse.down()
+                self.page.mouse.move(dx, dy, steps=12)
+                self.page.mouse.up()
+            after = self.page.evaluate("""({x,y}) => {
+              const el = document.elementFromPoint(x,y);
+              return el ? {tag: el.tagName.toLowerCase(), role: el.getAttribute('role') || '',
+                label: el.getAttribute('aria-label') || '', text: (el.innerText || el.value || '').trim().slice(0,160)} : null;
+            }""", {"x": sx, "y": sy})
+            return {"ok": True, "action": action, "coordinates": {"x": sx, "y": sy},
+                    "destination": ({"x": float(to_x), "y": float(to_y)} if action == "drag_at" else None),
+                    "element_before": before, "element_after": after,
+                    "verified": bool(before), "verification_note": "Mouse event dispatched to the observed viewport coordinate; verify the resulting page state."}
         if action == "click":
             dialog_policy = str(dialog_action or "dismiss").strip().lower()
             if dialog_policy not in {"dismiss", "accept"}:
