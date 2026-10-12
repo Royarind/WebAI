@@ -67,7 +67,10 @@ class ComputerUse:
         # Relative paths resolve from the current working directory. Absolute paths
         # can target any drive/folder; normal OS permissions remain in force.
         if not path.is_absolute():
-            path = Path.cwd() / path
+            # Treat paths relative to an explicitly configured search root as
+            # root-relative; with unrestricted defaults, use the current folder.
+            base = self.roots[0] if self.roots else Path.cwd()
+            path = base / path
         return path.resolve(strict=not allow_missing)
 
     def live_search_in_explorer(self, query: str) -> dict[str, Any]:
