@@ -15,8 +15,8 @@ BLOCKED=('purchase','buy now','pay now','payment','delete','remove account','sen
 NEGATION = re.compile(r"\b(?:do not|don't|dont|never|avoid|without|no need to|not to|not)\b", re.I)
 
 def sensitive(text):
-    low=text.lower()
-    return any(x in low for x in BLOCKED)
+    low = str(text or "").lower()
+    return any(re.search(r"\\b" + re.escape(phrase) + r"\\b", low) for phrase in BLOCKED)
 
 def sensitive_task(text):
     """Block requested consequential actions, but allow them when explicitly prohibited.
