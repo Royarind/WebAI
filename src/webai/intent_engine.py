@@ -37,7 +37,8 @@ _RISK_TERMS = {
 
 
 def _matches(text: str, phrases: tuple[str, ...]) -> list[str]:
-    low = f" {re.sub(r'\s+', ' ', text.lower()).strip()} "
+    normalized = re.sub(r"\\s+", " ", text.lower()).strip()
+    low = f" {normalized} "
     return [phrase.strip() for phrase in phrases if f" {phrase.strip()} " in low]
 
 
