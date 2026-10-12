@@ -63,7 +63,7 @@ def _filter_price_mismatch(task, plan):
     if ceiling is None or plan.get("action") not in {"click", "select"}:
         return None
     target = " ".join(str(plan.get(key, "")) for key in ("value", "name", "text", "option"))
-match = re.search(r"(?:under|up to|upto|less than|below)\s*(?:₹|rs\.?\s*)?([\d,]+)", target, re.I)
+    match = re.search(r"(?:under|up to|upto|less than|below)\s*(?:₹|rs\.?\s*)?([\d,]+)", target, re.I)
     if not match:
         return None
     try:
