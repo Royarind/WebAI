@@ -170,3 +170,20 @@ Tokens expire; refresh the token through your approved Microsoft identity flow w
 - Outlook: recent-message listing and message search via Microsoft Graph; no sending, moving, deleting, or calendar writes.
 - WhatsApp: can be approached through the existing visible browser workflow when WhatsApp Web is already authorized, but there is not yet a dedicated WhatsApp API connector.
 - Native Windows desktop control and Office document creation are not yet implemented as dedicated connectors.
+
+
+## Separate computer-use toolkit (Windows/macOS/Linux)
+
+The computer-use layer lives in `src/webai/computer_use.py` and is deliberately separate from the Playwright browser adapter. It combines native filesystem operations with optional PyAutoGUI visual control. The agent action schema exposes these computer tools separately from browser actions.
+
+Install the optional visual-control dependency in the project virtual environment:
+
+```powershell
+pip install -e ".[computer-use]"
+```
+
+Configure `WEBAI_FILE_ROOTS` to the specific folders the agent is permitted to access. File search/read, copy, move, directory creation and text-file creation are confined to these roots. Copy/move will not overwrite an existing destination. Delete requests create an approval token and do **not** delete anything until the caller explicitly approves that exact request. Keep the configured roots narrow; do not grant the whole system drive by default.
+
+The optional visual-control layer currently provides screenshot, click, pointer move, key press, hotkey and type primitives through PyAutoGUI. It is coordinate-based, so the agent must inspect a screenshot and verify the result; it is not equivalent to native accessibility-tree support. macOS may require Accessibility and Screen Recording permissions. Linux desktop sessions may require a supported graphical session and display backend.
+
+**Implementation boundary:** this is the initial computer-use toolkit and action-layer integration, not yet a complete OS-control product. The dashboard does not yet stream computer-use events live, provide an approval dialog for deletion, or guarantee that every pure desktop task bypasses browser initialization. Office document formats, clipboard APIs, native app discovery/accessibility, calendar integration, and end-to-end approval UX remain future work. Do not assume those capabilities are active merely because the tool primitives exist.
