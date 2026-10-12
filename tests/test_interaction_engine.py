@@ -249,3 +249,23 @@ def test_custom_upload_button_uses_browser_file_chooser(tmp_path: Path):
         assert result["verified"] is True
         assert result["files"] == ["attach.txt"]
         browser.close()
+
+
+
+def test_drag_drop_verifies_item_moved_into_destination():
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content("""
+          <div id="source-zone"><div id="card" draggable="true">Card</div></div>
+          <div id="destination" ondragover="event.preventDefault()"
+               ondrop="event.preventDefault(); this.appendChild(document.querySelector('#card'))">Column</div>
+        """)
+        result = InteractionEngine(page).perform(
+            "drag_drop", by="css", value="#card",
+            target_by="css", target_value="#destination"
+        )
+        assert result["ok"] is True
+        assert result["verified"] is True
+        assert page.locator("#destination #card").count() == 1
+        browser.close()
