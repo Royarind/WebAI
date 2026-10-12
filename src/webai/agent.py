@@ -16,7 +16,7 @@ NEGATION = re.compile(r"\b(?:do not|don't|dont|never|avoid|without|no need to|no
 
 def sensitive(text):
     low = str(text or "").lower()
-    return any(re.search(r"\\b" + re.escape(phrase) + r"\\b", low) for phrase in BLOCKED)
+    return any(re.search(r"\b" + re.escape(phrase) + r"\b", low) for phrase in BLOCKED)
 
 def sensitive_task(text):
     """Block requested consequential actions, but allow them when explicitly prohibited.
