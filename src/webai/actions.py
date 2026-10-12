@@ -306,10 +306,10 @@ def check(page, by, value, name=None, checked=True):
     return {"ok": True, "action": "check", "checked": bool(checked), "healed": healed, "verified": True}
 
 
-def screenshot(page, path):
+def screenshot(page, path, full_page=True):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    page.screenshot(path=str(path), full_page=True)
+    page.screenshot(path=str(path), full_page=bool(full_page))
     return str(path)
 
 
