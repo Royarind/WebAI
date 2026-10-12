@@ -243,7 +243,7 @@ class LLMClient:
                     raise ValueError("Control steps must be an integer from 1 to 20.")
             if action == "fill" and not isinstance(obj.get("text"), str):
                 raise ValueError("Model omitted fill text or returned a non-string value.")
-            if action == "select" and not isinstance(obj.get("option"), (str, int, float, bool, type(None))):
+            if action == "select" and not isinstance(obj.get("option"), (str, int, float, bool, list, type(None))):
                 raise ValueError("Model returned an invalid select option.")
             if action == "check" and "checked" in obj and not isinstance(obj["checked"], bool):
                 raise ValueError("Model returned an invalid checked value; expected a boolean.")
@@ -260,7 +260,7 @@ class LLMClient:
                     raise ValueError(f"{action} requires finite numeric {key} coordinates.")
         if action == "drag_drop" and not all(isinstance(obj.get(k), str) and obj[k].strip() for k in ("target_by", "target_value")):
             raise ValueError("drag_drop requires target_by and target_value for its destination.")
-        if action == "upload" and not isinstance(obj.get("path"), str):
+        if action == "upload" and not (isinstance(obj.get("path"), str) or (isinstance(obj.get("path"), list) and all(isinstance(item, str) for item in obj["path"]))):
             raise ValueError("upload requires a local file path.")
         if action == "wait_for" and obj.get("operation", "visible") not in {"visible", "hidden", "attached", "detached"}:
             raise ValueError("wait_for operation must be visible, hidden, attached, or detached.")
