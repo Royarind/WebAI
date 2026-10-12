@@ -71,3 +71,29 @@ def test_normalize_navigation_url_rejects_non_http_urls():
 
     with pytest.raises(ValueError):
         _normalize_navigation_url("javascript:alert(1)")
+
+
+
+def test_task_progress_preserves_evidence_and_flags_repeated_reads():
+    from webai.agent import TaskProgress
+
+    progress = TaskProgress("Compare three browser automation tools")
+    plan = {"action": "read_text", "by": "css", "value": "main"}
+    progress.record_action(plan, {"ok": True, "text": "Python bindings support multiple languages."}, "https://example.test/docs")
+
+    assert progress.repeated_read(plan, "https://example.test/docs")
+    snapshot = progress.snapshot()
+    assert snapshot["original_goal"] == "Compare three browser automation tools"
+    assert snapshot["evidence_ledger"][0]["url"] == "https://example.test/docs"
+    assert "Python bindings" in snapshot["evidence_ledger"][0]["text"]
+
+
+def test_task_progress_does_not_record_failed_action_as_evidence():
+    from webai.agent import TaskProgress
+
+    progress = TaskProgress("Research")
+    plan = {"action": "read_text", "by": "css", "value": "main"}
+    progress.record_action(plan, {"ok": False, "text": ""}, "https://example.test/docs")
+
+    assert not progress.repeated_read(plan, "https://example.test/docs")
+    assert progress.snapshot()["evidence_ledger"] == []
