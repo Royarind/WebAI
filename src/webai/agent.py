@@ -208,6 +208,31 @@ def _compact_result(result):
         compact["elements"] = _compact_elements(compact["elements"], 24)
     return compact
 
+def _enforce_google_flights_trip_type(task, current_url, plan):
+    """Deterministically convert repeated 'Round trip' clicks into a verified selection."""
+    if not isinstance(plan, dict):
+        return plan
+    if "google.com/travel/flights" not in str(current_url or "").lower():
+        return plan
+    if not re.search(r"\bone[ -]way\b", str(task or ""), re.I):
+        return plan
+    if plan.get("action") != "click":
+        return plan
+    target = " ".join(str(plan.get(key) or "") for key in ("value", "name", "text", "option"))
+    if not re.search(r"\bround\s*trip\b", target, re.I):
+        return plan
+    corrected = dict(plan)
+    corrected.update({
+        "action": "control",
+        "by": "role",
+        "value": "combobox",
+        "name": "Round trip",
+        "operation": "choose",
+        "target": "One way",
+        "reason": "Deterministic Google Flights recovery: select the requested trip type instead of clicking the trigger repeatedly.",
+    })
+    return corrected
+
 class Agent:
     """Bounded observe-plan-act-verify loop using a configurable chat model."""
     def __init__(self, browser=None, llm=None, memory=None):
@@ -397,6 +422,11 @@ class Agent:
                         )
                     except (KeyError, ValueError):
                         continue
+                # Do not trust the model to obey the one-way dropdown rule.
+                # Normalize a repeated click on "Round trip" into a verified
+                # choose operation before computing loop signatures or execution.
+                plan = _enforce_google_flights_trip_type(task, self.browser.page.url, plan)
+                trace[-1]['plan'] = plan
                 kind=plan['action']
                 if kind == 'navigate':
                     try:
