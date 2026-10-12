@@ -252,12 +252,14 @@ class Agent:
             intervention=detect_intervention(self.browser.page, task=task, overlays=obs.get('overlays'))
             if intervention and intervention.get('type') == 'contact_input_required' and {'phone','email'}.intersection(profile_filled):
                 intervention=None
-            messages=[{'role':'user','content':json.dumps({'goal':task,'task_plan':task_plan.snapshot(),'evidence_store':evidence_store.snapshot(),'observation':obs},ensure_ascii=False)}]
-            failed_action_signatures = {}
+            # Initialize deterministic planning and evidence state before building
+            # the initial model prompt; the prompt includes both snapshots.
             progress = TaskProgress(task)
             task_plan = TaskPlan(task)
             evidence_store = EvidenceStore()
             progress.record_navigation(self.browser.page.url)
+            messages=[{'role':'user','content':json.dumps({'goal':task,'task_plan':task_plan.snapshot(),'evidence_store':evidence_store.snapshot(),'observation':obs},ensure_ascii=False)}]
+            failed_action_signatures = {}
             if intervention:
                 status='needs_input'; summary=intervention.get('reason', 'Human intervention is required.')
             for i in range(0 if intervention else self.settings.max_steps):
