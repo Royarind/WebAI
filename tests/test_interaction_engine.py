@@ -47,7 +47,7 @@ def test_inventory_includes_custom_controls_and_selected_state():
         page = browser.new_page()
         page.set_content("""
           <div role="combobox" aria-label="Trip type" aria-expanded="false" tabindex="0">Round trip</div>
-          <div role="switch" aria-label="Direct flights" aria-checked="true" tabindex="0"></div>
+          <div role="switch" aria-label="Direct flights" aria-checked="true" tabindex="0" style="width:120px;height:32px"></div>
           <div role="option" aria-label="One way" aria-selected="true">One way</div>
         """)
         result = InteractionEngine(page).observe()
