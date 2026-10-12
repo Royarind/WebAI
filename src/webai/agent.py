@@ -11,7 +11,7 @@ from .task_planning import TaskPlan, EvidenceStore, verify_deliverable
 
 import re
 
-BLOCKED=('purchase','buy now','pay now','payment','delete','remove account','send email','send message','submit order','place order','transfer money','publish','confirm booking','finalize order')
+BLOCKED=('purchase','buy now','pay now','payment','delete','remove account','send email','send an email','send message','send a message','submit order','place order','transfer money','publish','confirm booking','finalize order')
 NEGATION = re.compile(r"\b(?:do not|don't|dont|never|avoid|without|no need to|not to|not)\b", re.I)
 
 def sensitive(text):
