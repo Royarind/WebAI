@@ -94,7 +94,8 @@ _INVENTORY_SCRIPT = r"""(limit) => {
     multiple: !!el.multiple,
     selectedOptions: el.tagName === 'SELECT' ? [...el.selectedOptions].map(o => o.label).slice(0, 12) : [],
     inShadowRoot: !!el.getRootNode().host
-  }));
+    };
+  });
 }"""
 
 
