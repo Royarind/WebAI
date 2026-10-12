@@ -156,3 +156,59 @@ def test_javascript_confirm_can_be_accepted_when_explicitly_authorized():
         assert result["dialog"]["decision"] == "accepted"
         assert page.locator("#continue").inner_text() == "Continued"
         browser.close()
+
+
+
+def test_custom_switch_and_contenteditable_are_verified():
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content("""
+          <div id="switch" role="switch" aria-label="Direct flights" aria-checked="false" tabindex="0"
+            onclick="this.setAttribute('aria-checked', this.getAttribute('aria-checked') === 'true' ? 'false' : 'true')">Off</div>
+          <div id="editor" contenteditable="true" role="textbox" aria-label="Notes"></div>
+        """)
+        from webai.actions import check, fill
+        checked = check(page, "role", "switch", "Direct flights", True)
+        assert checked["verified"] is True
+        assert page.locator("#switch").get_attribute("aria-checked") == "true"
+        filled = fill(page, "role", "textbox", "Meeting notes", "Notes")
+        assert filled["verified"] is True
+        assert page.locator("#editor").inner_text() == "Meeting notes"
+        browser.close()
+
+
+def test_coordinate_click_is_bounded_to_viewport_and_dispatches_event():
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page(viewport={"width": 500, "height": 300})
+        page.set_content("""
+          <button id="go" style="position:absolute;left:100px;top:80px;width:120px;height:40px"
+            onclick="document.querySelector('#result').textContent='clicked'">Run</button>
+          <output id="result"></output>
+        """)
+        engine = InteractionEngine(page)
+        result = engine.perform("click_at", x=140, y=100)
+        assert result["ok"] is True
+        assert page.locator("#result").inner_text() == "clicked"
+        import pytest
+        with pytest.raises(ValueError, match="outside the current viewport"):
+            engine.perform("click_at", x=900, y=100)
+        browser.close()
+
+
+def test_nested_scroll_container_reports_changed_scroll_position():
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content("""
+          <div id="panel" style="height:100px;overflow:auto">
+            <div style="height:700px">Scrollable content</div>
+          </div>
+        """)
+        result = InteractionEngine(page).perform(
+            "scroll", value="down", text=250, target_by="css", target_value="#panel"
+        )
+        assert result["verified"] is True
+        assert result["after"]["top"] > result["before"]["top"]
+        browser.close()
