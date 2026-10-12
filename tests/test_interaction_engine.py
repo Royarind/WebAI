@@ -125,3 +125,34 @@ def test_download_saves_file_and_reports_path(tmp_path: Path):
         assert result["verified"] is True
         assert destination.read_text(encoding="utf-8") == "webai-download"
         browser.close()
+
+
+
+def test_javascript_confirm_is_dismissed_by_default_and_reported():
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content("""
+          <button id="delete" onclick="if(confirm('Confirm deletion?')) this.textContent='Deleted'; else this.textContent='Cancelled'">Delete</button>
+        """)
+        result = InteractionEngine(page).perform("click", by="css", value="#delete")
+        assert result["ok"] is True
+        assert result["dialog"]["type"] == "confirm"
+        assert result["dialog"]["decision"] == "dismissed"
+        assert page.locator("#delete").inner_text() == "Cancelled"
+        browser.close()
+
+
+def test_javascript_confirm_can_be_accepted_when_explicitly_authorized():
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content("""
+          <button id="continue" onclick="if(confirm('Continue?')) this.textContent='Continued'">Continue</button>
+        """)
+        result = InteractionEngine(page).perform(
+            "click", by="css", value="#continue", dialog_action="accept"
+        )
+        assert result["dialog"]["decision"] == "accepted"
+        assert page.locator("#continue").inner_text() == "Continued"
+        browser.close()
