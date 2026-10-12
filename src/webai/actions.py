@@ -249,15 +249,28 @@ def select_option(page, by, value, option, name=None):
     locator, healed = _recover_locator(page, by, value, name, "select")
     tag = locator.evaluate("el => el.tagName.toLowerCase()")
     if tag != "select":
-        result = operate_control(page, by, value, "choose", option, name)
-        result["action"] = "select"
-        result["selection_strategy"] = "custom_control"
-        return result
-    locator.select_option(option, timeout=8000)
+        requested = option if isinstance(option, list) else [option]
+        results = [operate_control(page, by, value, "choose", item, name) for item in requested]
+        return {"ok": all(result.get("ok") for result in results), "action": "select",
+                "option": option, "selection_strategy": "custom_control",
+                "verified": all(result.get("verified") for result in results),
+                "results": results, "healed": healed}
+    requested = option if isinstance(option, list) else [option]
+    option_rows = locator.locator("option").evaluate_all(
+        "els => els.map(el => ({value: el.value, label: (el.label || el.textContent || '').trim(), disabled: !!el.disabled}))"
+    )
+    values_to_select = []
+    for requested_item in requested:
+        matched = next((row for row in option_rows if not row["disabled"] and str(row["value"]) == str(requested_item)), None)
+        if matched is None:
+            matched = next((row for row in option_rows if not row["disabled"] and row["label"] == str(requested_item)), None)
+        if matched is None:
+            raise LookupError(f"Native select option {requested_item!r} was not found by exact value or label.")
+        values_to_select.append(matched["value"])
+    locator.select_option(values_to_select if isinstance(option, list) else values_to_select[0], timeout=8000)
     selected_values = locator.locator("option:checked").evaluate_all("els => els.map(el => el.value)")
     selected_labels = locator.locator("option:checked").evaluate_all("els => els.map(el => (el.label || el.textContent || '').trim())")
-    requested = option if isinstance(option, list) else [option]
-    verified = all(str(item) in selected_values or str(item) in selected_labels for item in requested)
+    verified = all(value in selected_values for value in values_to_select)
     if not verified:
         raise RuntimeError(
             f"Select verification failed: expected {option!r}, got values={selected_values!r}, labels={selected_labels!r}."
