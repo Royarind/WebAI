@@ -257,12 +257,45 @@ def select_option(page, by, value, option, name=None):
 
 
 def check(page, by, value, name=None, checked=True):
+    """Set native or ARIA checkbox/radio/switch state and verify it."""
     locator, healed = _recover_locator(page, by, value, name, "check")
-    locator.check(timeout=8000) if checked else locator.uncheck(timeout=8000)
-    actual = locator.is_checked()
-    if actual != checked:
-        raise RuntimeError("Checkbox verification failed.")
-    return {"ok": True, "action": "check", "checked": checked, "healed": healed, "verified": True}
+    meta = locator.evaluate("""el => ({
+      tag: el.tagName.toLowerCase(),
+      type: (el.getAttribute('type') || '').toLowerCase(),
+      role: (el.getAttribute('role') || '').toLowerCase(),
+      checked: ('checked' in el) ? !!el.checked : null,
+      ariaChecked: el.getAttribute('aria-checked'),
+      ariaPressed: el.getAttribute('aria-pressed'),
+      disabled: !!el.disabled || el.getAttribute('aria-disabled') === 'true'
+    })""")
+    if meta["disabled"]:
+        raise ValueError("Cannot change a disabled checkbox, radio, or switch.")
+    if meta["type"] in {"checkbox", "radio"} or meta["role"] in {"checkbox", "radio"}:
+        if meta["role"] == "radio" and not checked:
+            raise ValueError("A radio button cannot be unchecked directly; choose another radio option.")
+        if meta["checked"] is True and checked or meta["ariaChecked"] == str(checked).lower():
+            return {"ok": True, "action": "check", "checked": checked, "already_set": True,
+                    "healed": healed, "verified": True}
+        if checked:
+            locator.check(timeout=8000)
+        else:
+            locator.uncheck(timeout=8000)
+        try:
+            actual = locator.is_checked()
+        except Exception:
+            actual = locator.get_attribute("aria-checked") == "true"
+    elif meta["role"] == "switch" or meta["ariaChecked"] in {"true", "false"} or meta["ariaPressed"] in {"true", "false"}:
+        current = meta["ariaChecked"] == "true" if meta["ariaChecked"] is not None else meta["ariaPressed"] == "true"
+        if current != bool(checked):
+            locator.click(timeout=8000)
+        aria_checked = locator.get_attribute("aria-checked")
+        aria_pressed = locator.get_attribute("aria-pressed")
+        actual = aria_checked == "true" if aria_checked is not None else aria_pressed == "true"
+    else:
+        raise ValueError("Target is not an identifiable checkbox, radio button, or switch.")
+    if actual != bool(checked):
+        raise RuntimeError(f"Checkbox/switch verification failed: expected {bool(checked)}, got {actual}.")
+    return {"ok": True, "action": "check", "checked": bool(checked), "healed": healed, "verified": True}
 
 
 def screenshot(page, path):
