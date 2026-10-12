@@ -220,12 +220,30 @@ class Agent:
             return None
         text = str(task or "").strip()
         low = text.lower()
-        if not any(word in low for word in ("computer", "local file", "local folder", "my files", "my computer", "filesystem", "drive", "desktop")):
+        has_absolute_windows_path = bool(re.search(r"[A-Za-z]:\\\\", text))
+        is_file_read_request = any(word in low for word in ("read ", "open ", "summarize ", "summarise ", "inspect "))
+        if not has_absolute_windows_path and not any(word in low for word in ("computer", "local file", "local folder", "my files", "my computer", "filesystem", "drive", "desktop")):
             return None
         try:
             if "capabilities" in low or "which drives" in low or "available drives" in low:
                 data = self.computer.capabilities()
                 summary = "Computer-use capabilities retrieved; access follows OS permissions."
+            elif has_absolute_windows_path and is_file_read_request:
+                path_match = re.search(r"""([A-Za-z]:\\\\.*?\\.[A-Za-z0-9]{1,10})""", text)
+                if not path_match:
+                    return {"status": "needs_input", "summary": "I detected a local file request but could not safely extract the full path. Quote the full path and retry.", "steps": [], "data": {}, "artifacts": [], "elapsed_seconds": 0, "url": None, "intervention": None}
+                target_path = path_match.group(1).strip().rstrip(" .!?,;")
+                self.computer._event("computer_step", message=f"Reading local file: {target_path}", action="file_read_started", path=target_path)
+                data = self.computer.read(target_path)
+                self.computer._event("computer_step", message=f"Read completed: {target_path}", action="file_read_complete", path=target_path)
+                content = data.get("text", "")
+                low_content = content.lower()
+                if "pip install" in low_content or "installation" in low_content or "install" in low_content:
+                    relevant = [line.strip() for line in content.splitlines() if any(term in line.lower() for term in ("install", "pip ", "python ", "requirements", "setup", "venv", "clone", "uvicorn"))]
+                    data["summary"] = "Installation-related lines found in the file:\\n" + "\\n".join(relevant[:30])
+                else:
+                    data["summary"] = content[:3000]
+                summary = f"Read local file successfully: {target_path}. The content and extracted summary are included in the result."
             elif "search" in low or "find" in low or "look for" in low:
                 named_match = re.search(r'\b(?:named|called)\s+["\']?([^\s,;]+)', text, re.I)
                 match = named_match or re.search(r'\b(?:for|about|containing)\s+([^.!?,;\n]+)', text, re.I)
