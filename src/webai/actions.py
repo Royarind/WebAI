@@ -68,11 +68,28 @@ def _recover_locator(page, by, value, name, action):
     try:
         locator = locate(page, by, value, name)
         if locator.count() == 1:
-            return locator, None
+            if locator.is_visible():
+                return locator, None
+            # Preserve legitimate interactions with visually hidden native
+            # checkbox/radio/file inputs, whose associated label/file chooser is
+            # the user-facing interaction. Other hidden targets should recover
+            # to a visible accessible control rather than time out repeatedly.
+            meta = locator.evaluate("""el => ({
+              tag: el.tagName.toLowerCase(),
+              type: (el.getAttribute('type') || '').toLowerCase()
+            })""")
+            if action == "click" and meta["tag"] == "input" and meta["type"] in {"checkbox", "radio"}:
+                return locator, None
+            if action == "upload" and meta["tag"] == "input" and meta["type"] == "file":
+                return locator, None
+            original_error = LookupError(
+                f"The requested {action} target matched an element, but it is hidden. "
+                "Resolve the visible control or associated label instead."
+            )
+        else:
+            original_error = LookupError("The requested locator did not resolve uniquely.")
     except (LookupError, ValueError) as first_error:
         original_error = first_error
-    else:
-        original_error = LookupError("The requested locator did not resolve uniquely.")
     # Preserve the established DOM-intelligence recovery for stale CSS/XPath
     # selectors. Accessible-role fallback is specifically for semantic locator
     # mismatches such as a custom dropdown exposed as a button instead of combobox.
