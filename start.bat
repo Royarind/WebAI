@@ -64,12 +64,23 @@ if errorlevel 1 (
   echo [WARNING] Staged local changes detected. Skipping git pull to protect your edits.
   goto :install
 )
+REM If this launcher was downloaded before it became tracked by Git, move it
+REM aside temporarily so the incoming tracked start.bat can be checked out safely.
+set "BAT_BACKUP="
+git ls-files --error-unmatch start.bat >nul 2>&1
+if errorlevel 1 if exist "start.bat" (
+  set "BAT_BACKUP=%TEMP%\webai_start_%RANDOM%.bat"
+  copy /y "start.bat" "!BAT_BACKUP!" >nul
+  del "start.bat"
+)
 git pull --ff-only
 if errorlevel 1 (
+  if defined BAT_BACKUP if exist "!BAT_BACKUP!" copy /y "!BAT_BACKUP!" "start.bat" >nul
   echo [ERROR] Git update failed. Check network access and resolve any Git conflicts.
   pause
   exit /b 1
 )
+if defined BAT_BACKUP if exist "!BAT_BACKUP!" del "!BAT_BACKUP!" >nul 2>&1
 
 :install
 echo [3/8] Ensuring project virtual environment exists...
