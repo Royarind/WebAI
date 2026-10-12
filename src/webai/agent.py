@@ -517,7 +517,10 @@ class Agent:
 
     def _act(self, plan):
         kind=plan['action']; page=self.browser.page
-        if kind=='inspect': return {'ok':True,'elements':self.browser.inspect(180)}
+        if kind=='inspect':
+            observation = self.browser.observe(180)
+            return {'ok': True, 'elements': observation.get('controls', []), 'observation': observation}
+        if kind=='observe': return {'ok': True, 'observation': self.browser.observe(220)}
         if kind=='status': return self.browser.status()
         if kind=='screenshot': return {'ok':True,'path':self.browser.screenshot(plan.get('path') or f'{self.settings.artifact_dir}/manual.png')}
         if kind=='navigate': return self.browser.open(plan['value'])
@@ -528,6 +531,20 @@ class Agent:
         if kind=='select': return self.browser.select(plan['by'],plan['value'],plan['option'],plan.get('name'))
         if kind=='check': return self.browser.check(plan['by'],plan['value'],plan.get('name'),bool(plan.get('checked',True)))
         if kind=='control': return self.browser.control(plan['by'],plan['value'],plan['operation'],plan.get('target'),plan.get('name'),plan.get('steps',1))
+        if kind in {'hover', 'double_click', 'press', 'upload', 'drag_drop', 'wait_for'}:
+            return self.browser.interact(
+                kind, by=plan.get('by', 'role'), value=plan.get('value', ''),
+                name=plan.get('name'), text=plan.get('text'), option=plan.get('option'),
+                checked=plan.get('checked', True), operation=plan.get('operation'),
+                target=plan.get('target'), steps=plan.get('steps', 1), path=plan.get('path'),
+                target_by=plan.get('target_by'), target_value=plan.get('target_value'),
+                target_name=plan.get('target_name'), key=plan.get('key')
+            )
+        if kind == 'download':
+            return self.browser.interact(
+                'download', by=plan.get('by', 'role'), value=plan.get('value', ''),
+                name=plan.get('name'), path=plan.get('path')
+            )
         raise ValueError('Unsupported action: '+kind)
     def chat(self,url=None,persistent=True):
         # Keep the same browser across user prompts; each request gets a fresh bounded agent loop.
