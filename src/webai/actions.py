@@ -142,6 +142,33 @@ def _recover_locator(page, by, value, name, action):
             except Exception:
                 continue
         if not candidates:
+            # Playwright role locators may not expose every custom element in an
+            # open shadow root. CSS locators pierce open shadow roots, so use exact
+            # semantic attributes as a bounded fallback before exact text.
+            for attribute in ("aria-label", "title", "placeholder", "data-testid"):
+                try:
+                    candidate = context.locator(f"[{attribute}={json.dumps(name)}]")
+                    count = candidate.count()
+                    if count == 1 and candidate.is_visible() and not candidate.is_disabled():
+                        key = f"{context_index}:" + candidate.evaluate("""el => {
+                          const parts = [];
+                          let node = el;
+                          while (node && node.nodeType === 1) {
+                            let index = 0, sibling = node;
+                            while ((sibling = sibling.previousElementSibling)) index++;
+                            parts.unshift(index); node = node.parentElement;
+                          }
+                          const root = el.getRootNode();
+                          return (root && root.host ? 'shadow:' + root.host.tagName + '#' + (root.host.id || '') + '/' : '') + parts.join('/');
+                        }""")
+                        candidates[key] = (candidate, {"strategy": "shadow_dom_attribute",
+                                                       "attribute": attribute, "context": context_index})
+                        break
+                    elif count:
+                        diagnostics.append({"attribute": attribute, "matches": count, "context": context_index})
+                except Exception:
+                    continue
+        if not candidates:
             try:
                 candidate = context.get_by_text(name, exact=True)
                 count = candidate.count()
