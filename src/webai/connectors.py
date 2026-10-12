@@ -124,6 +124,34 @@ class LocalFileConnector:
         return {"ok": True, "path": str(path), "text": text[:max(1, min(int(max_chars), 50000))],
                 "truncated": len(text) > max_chars, "characters": len(text)}
 
+    def list_recent_messages(self, *, limit: int = 10, unread_only: bool = False) -> dict[str, Any]:
+        """List recent messages for a briefing when the user has not supplied search terms."""
+        if not self.available:
+            return {"ok": False, "error": "Outlook is not configured. Supply WEBAI_OUTLOOK_ACCESS_TOKEN with delegated Mail.Read permission.", "messages": []}
+        top = max(1, min(int(limit), 25))
+        params = {"$top": str(top), "$orderby": "receivedDateTime desc",
+                  "$select": "id,subject,from,receivedDateTime,bodyPreview,isRead,webLink,importance"}
+        if unread_only:
+            params["$filter"] = "isRead eq false"
+        headers = {"Authorization": f"Bearer {self.access_token}"}
+        try:
+            response = requests.get(f"{self.BASE_URL}/me/messages", params=params, headers=headers, timeout=self.timeout)
+            if response.status_code in (401, 403):
+                return {"ok": False, "error": f"Microsoft Graph denied access (HTTP {response.status_code}). Refresh the token and confirm Mail.Read consent.", "messages": []}
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            return {"ok": False, "error": f"Outlook message listing failed: {exc}", "messages": []}
+        messages = []
+        for item in payload.get("value", []):
+            sender = item.get("from", {}).get("emailAddress", {}) or {}
+            messages.append({"id": item.get("id"), "subject": item.get("subject", ""),
+                "sender": sender.get("name", ""), "sender_email": sender.get("address", ""),
+                "received": item.get("receivedDateTime"), "preview": item.get("bodyPreview", ""),
+                "is_read": item.get("isRead"), "importance": item.get("importance"),
+                "web_link": item.get("webLink")})
+        return {"ok": True, "count": len(messages), "messages": messages, "read_only": True}
+
 
 class OutlookGraphConnector:
     """Read-only Microsoft Graph email search using a pre-authorized access token."""
