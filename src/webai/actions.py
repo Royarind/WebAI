@@ -2,6 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 from datetime import datetime
 import json
+import time
 from .locators import make_locator
 from .webai_dom_intelligence import DOMIntelligence
 
@@ -503,17 +504,27 @@ def operate_control(page, by, value, operation, target=None, name=None, steps=1,
             diagnostics = []
             option_roles = ("option", "menuitem", "menuitemcheckbox", "menuitemradio",
                             "radio", "checkbox", "button", "tab")
-            for context in contexts:
-                for role in option_roles:
-                    try:
-                        option_locator = context.get_by_role(role, name=target_name, exact=True)
-                        count = option_locator.count()
-                        if count == 1 and option_locator.is_visible() and not option_locator.is_disabled():
-                            candidates.append((option_locator, role))
-                        elif count:
-                            diagnostics.append({"role": role, "matches": count})
-                    except Exception:
-                        continue
+            # Custom menus often render asynchronously after the trigger click.
+            # Poll observable DOM state for a bounded interval rather than failing
+            # immediately or blindly clicking the trigger repeatedly.
+            deadline = time.monotonic() + min(max(timeout_ms, 500) / 1000.0, 2.0)
+            while True:
+                candidates = []
+                diagnostics = []
+                for context in contexts:
+                    for role in option_roles:
+                        try:
+                            option_locator = context.get_by_role(role, name=target_name, exact=True)
+                            count = option_locator.count()
+                            if count == 1 and option_locator.is_visible() and not option_locator.is_disabled():
+                                candidates.append((option_locator, role))
+                            elif count:
+                                diagnostics.append({"role": role, "matches": count})
+                        except Exception:
+                            continue
+                if candidates or time.monotonic() >= deadline:
+                    break
+                page.wait_for_timeout(100)
             if not candidates:
                 for context in contexts:
                     try:
