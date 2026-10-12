@@ -160,3 +160,24 @@ def test_invalid_locator_uses_uniquely_observed_google_search_field(monkeypatch)
     assert action["by"] == "placeholder"
     assert action["value"] == "Search"
     assert action["text"] == "weather forecast"
+
+
+
+@pytest.mark.parametrize("payload", [
+    {"action": "click_at", "x": 120, "y": 40},
+    {"action": "move_at", "x": 120, "y": 40},
+    {"action": "drag_at", "x": 10, "y": 20, "to_x": 80, "to_y": 90},
+])
+def test_parse_action_accepts_coordinate_interactions(payload):
+    action = LLMClient._parse_action(json.dumps(payload))
+    assert action["action"] == payload["action"]
+
+
+def test_parse_action_rejects_non_numeric_coordinates():
+    with pytest.raises(ValueError, match="numeric x"):
+        LLMClient._parse_action('{"action":"click_at","x":"left","y":20}')
+
+
+def test_parse_action_requires_drag_drop_destination():
+    with pytest.raises(ValueError, match="target_by and target_value"):
+        LLMClient._parse_action('{"action":"drag_drop","by":"css","value":"#card"}')
