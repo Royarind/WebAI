@@ -74,6 +74,12 @@ class InteractionEngine:
         before_title = self.page.title()
         if action == "observe":
             return {"ok": True, "action": "observe", "observation": self.observe()}
+        if action in {"set_date", "select_tab", "expand", "collapse", "table_action", "validate_form"}:
+            from .advanced_interactions import perform_advanced
+            return perform_advanced(
+                self, action, by=by, value=value, name=name, target=target,
+                text=text, target_name=target_name
+            )
         if action in {"click_at", "move_at", "drag_at"}:
             if x is None or y is None:
                 raise ValueError(f"{action} requires numeric x and y coordinates from a fresh screenshot.")
